@@ -2,7 +2,7 @@ import socket
 from threading import Thread
 
 TCP_IP = 'localhost'
-TCP_PORT = 9001
+TCP_PORT = 12003
 BUFFER_SIZE = 1024
 
 class ClientThread(Thread):
