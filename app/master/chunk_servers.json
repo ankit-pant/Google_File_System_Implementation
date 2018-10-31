@@ -29,10 +29,4 @@
 		"disk_free_space": 83126434848
 	},
 	"port": 12006
-}, {
-	"ip": "10.2.129.89",
-	"server_details": {
-		"disk_free_space": 23116734848
-	},
-	"port": 12007
 }]

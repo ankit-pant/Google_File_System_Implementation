@@ -14,6 +14,7 @@ import pickle
 import time
 import socket
 import sys
+import copy
 
 class BgPoolChunkServer(object):
     def __init__(self, chunk_servers, self_ip_port, interval=5):
@@ -48,18 +49,52 @@ class BgPoolChunkServer(object):
 
 
 class ListenClientChunkServer(Thread):
-    def __init__(self,ip,port,sock):
+    def __init__(self, metaData, chunkMapping, sock, self_ip, self_port):
         Thread.__init__(self)
-        self.ip = ip
-        self.port = port
+        self.metaData = metaData
+        self.chunkMapping = chunkMapping
         self.sock = sock
-        print (" New thread started for "+ip+":"+str(port))
+        self.ip = self_ip
+        self.port = self_port
     
     def run(self):
         data = self.sock.recv(1024)
         data = data.decode()
-        print(data)
-    
+        data = data.replace("\'", "\"")
+        j = json.loads(data)
+        if j["agent"]=="client":
+            client_ip=j["ip"]
+            client_port=j["port"]
+            if j["action"]=="read":
+                file_name = j["data"]["file_name"]
+                file_handle = metaData.fileNamespace.retrieveHandle(file_name)
+                response_data = {}
+                response_data["agent"] = "master"
+                response_data["ip"]=self.ip
+                response_data["port"]=self.port
+                response_data["action"] = "response/read"
+                response_data["data"] = []
+                if file_handle == None:
+                    response_data["responseStatus"] = 404
+                else:
+                    response_data["responseStatus"] = 200
+                    handle_data = self.metaData.metadata
+                    for file in handle_data:
+                        if file["fileHashName"] == file_handle:
+                            for chunk in file:
+                                if chunk["chunk_index"] in j["data"]["idx"]:
+                                    handle_details = {}
+                                    handle_details["chunk_handle"] = chunk["chunk_handle"]
+                                    for cmap in self.chunkMapping:
+                                        if cmap["handle"] == chunk["chunk_handle"]:
+                                            handle_details["chunk_servers"] = copy.deepcopy(cmap["chunk_servers"])
+                                            break
+                                    response_data["data"].append(handle_details)
+                            break
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect((client_ip, client_port))
+                s.sendall(str(response_data).encode())
+                s.close()
 
 try:
     with open('chunk_servers.json') as f:
@@ -90,7 +125,6 @@ except IOError:
                "home/b/g", "home/b/h", "home/b/i", "home/c/j", "home/c/k", "home/c/l", "home/a/d/m", "home/a/d/n", "home/a/d/n/EOT.mkv"]
     
     type_dir = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]
-    
     for i in range(len(dir_arr)):
         incoming = new_tree.insert(dir_arr[i], type_dir[i], new_tree, metaData, chunkMapping)
         metaData = incoming[1]
@@ -100,6 +134,7 @@ except IOError:
     new_tree.showDirectoryStructure(metaData.fileNamespace)
     master_state = open('masterState','ab')
     pickle.dump(metaData, master_state)
+    master_state.close()
 
 tcpsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 tcpsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -110,6 +145,6 @@ while True:
     print ("Waiting for incoming connections...")
     (conn, (ip,port)) = tcpsock.accept()
     print ('Got connection from ', (ip,port))
-    listenthread = ListenClientChunkServer(ip,port,conn)
+    listenthread = ListenClientChunkServer(metaData, chunkMapping, conn, self_ip_port[0], int(self_ip_port[1]))
     listenthread.daemon = True
     listenthread.start()
