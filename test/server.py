@@ -1,7 +1,7 @@
 import socket
 from threading import Thread
 
-TCP_IP = 'localhost'
+TCP_IP = '192.168.43.90'
 TCP_PORT = 12003
 BUFFER_SIZE = 1024
 
@@ -14,17 +14,7 @@ class ClientThread(Thread):
         print (" New thread started for "+ip+":"+str(port))
 
     def run(self):
-        filename='mytext.txt'
-        f = open(filename,'rb')
-        while True:
-            l = f.read(BUFFER_SIZE)
-            while (l):
-                self.sock.send(l)
-                l = f.read(BUFFER_SIZE)
-            if not l:
-                f.close()
-                self.sock.close()
-                break
+        print("CONNECTED")
 
 tcpsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 tcpsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

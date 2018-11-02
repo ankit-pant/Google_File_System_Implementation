@@ -6,6 +6,8 @@ import socket
 import errno
 from socket import error as socket_error
 
+globalChunkMapping = None
+
 config = configparser.RawConfigParser()
 config.read('master.properties')
 CHUNKSIZE = int(config.get('Master_Data','CHUNKSIZE'))
@@ -14,7 +16,7 @@ CHUNKSIZE = int(config.get('Master_Data','CHUNKSIZE'))
 class ChunkLoc:
     def __init__(self):
         self.chunks_mapping = []
-        
+        self.slaves_state = []
 # persistent---> namespace stores file structure while metadata stores file to chunks mapping
 class DumpObj:
     def __init__(self):
@@ -55,7 +57,7 @@ class Tree:
         server_list.append(s_replica2)
         return server_list
     
-    def fillMetaData(self, file_name, file_hash, metaObj, cmap):
+    def fillMetaData(self, file_name, file_hash, metaObj):
         file_obj = {}
         file_obj["fileHashName"] = file_hash
         file_obj["chunkDetails"] = []
@@ -77,7 +79,7 @@ class Tree:
                 j = {}
                 j["chunk_handle"]=chunk_hash
                 j["servers"]=self.allocateServers()
-                cmap.chunks_mapping.append(j)
+                globalChunkMapping.chunks_mapping.append(j)
                 
                 DELIMITER = config.get('Master_Data', 'DELIMITER')
                 for chunk_server in j["servers"]:
@@ -94,17 +96,16 @@ class Tree:
                     except socket_error as serr:
                         print("Unable to connect to the chunk server")
                         continue
-                # ping chunkservers with the data
                 file_obj["chunkDetails"].append(chunk)
                 c_num+=1
                 bytes_read = file.read(CHUNKSIZE)
         finally:
             file.close()
         metaObj.metadata.append(file_obj)
-        return cmap, metaObj
+        return metaObj
         
     
-    def traverseInsert(self, dir_path, tree_root, isFile, metaObj, cmap):
+    def traverseInsert(self, dir_path, tree_root, isFile, metaObj):
         dir_found = False
         if dir_path[0] == tree_root.name and tree_root.isFile==False:
             del dir_path[0]
@@ -114,7 +115,7 @@ class Tree:
                     dir_found = True
                     break
             if dir_found:
-                return self.traverseInsert(dir_path, tree_root, isFile, metaObj, cmap)
+                return self.traverseInsert(dir_path, tree_root, isFile, metaObj)
             elif dir_found==False and dir_path:
                 new_obj = Tree(dir_path[0])
                 new_obj.isFile = isFile
@@ -124,14 +125,14 @@ class Tree:
                     result = hashlib.sha1(file_content)
                     file_hash = result.hexdigest()
                     new_obj.fileHash = file_hash
-                    incoming = self.fillMetaData(dir_path[0], file_hash, metaObj, cmap)
+                    incoming = self.fillMetaData(dir_path[0], file_hash, metaObj)
                 tree_root.children_name.append(dir_path[0])
                 tree_root.children_ptr.append(new_obj)
-                return True, metaObj, cmap
+                return True, metaObj
         else:
             return False, incoming[0], incoming[1]
     
-    def insert(self, name, isFile, tree_root, metaObj, cmap):
+    def insert(self, name, isFile, tree_root, metaObj):
         parent_directories = name.split('/')
         null_idx = []
         i=0
@@ -146,9 +147,9 @@ class Tree:
         if tree_root.name == "" and not tree_root.children_name:
             tree_root.name = name
             tree_root.isFile = isFile
-            return True, metaObj, cmap
+            return True, metaObj
         else:
-            insert_loc = self.traverseInsert(parent_directories, tree_root, isFile, metaObj, cmap)
+            insert_loc = self.traverseInsert(parent_directories, tree_root, isFile, metaObj)
             return insert_loc
         
     def showDirectoryStructure(self, tree_root):
