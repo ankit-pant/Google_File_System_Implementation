@@ -3,7 +3,6 @@ import hashlib
 import json
 import configparser
 import socket
-import errno
 from socket import error as socket_error
 
 globalChunkMapping = None

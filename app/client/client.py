@@ -77,6 +77,8 @@ class ListenMasterChunkServer(Thread):
                         print(":::::::::::::::::::::::::::::::::::::::::::::::::::::")
                         s.sendall(str(request_data).encode())
                         s.close()
+            elif json_data["agent"] == "slave":
+                print("data from slave")
                     
         except:
             print("Not a json data")
@@ -116,6 +118,9 @@ class TakeUserInput(object):
                     while start_idx<=end_idx:
                         request_data["data"]["idx"].append(int(start_idx))
                         start_idx+=1
+            elif command == "snapshot":
+                request_data["action"] = "snapshot"
+                request_data["data"] = []
             print("Outside while, data is: "+str(request_data))
             print("Outside while, master is: "+self.Master_Ip+":"+str(self.Master_Port))
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
