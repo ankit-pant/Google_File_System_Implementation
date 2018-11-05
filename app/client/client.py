@@ -3,11 +3,15 @@ from threading import Thread
 import sys
 import configparser
 import json
+import copy
 
-byte_read = []
+
+indices_arr = []
 config = configparser.RawConfigParser()
 config.read('client.properties')
 REC_LIMIT = int(config.get('Client_Data','CHUNK_RECSIZE'))
+CHUNKSIZE = int(config.get('Client_Data','CHUNKSIZE'))
+
 
 class ListenMasterChunkServer(Thread):
     def __init__(self,sock, ip, port):
@@ -38,17 +42,18 @@ class ListenMasterChunkServer(Thread):
     
            
     def run(self):
+        global indices_arr
         data = self.sock.recv(REC_LIMIT)
         try:
             str_data = data.decode().replace("\'", "\"")
+            print(str_data)
             json_data = json.loads(str_data)
-            print("data recieved: "+str(json_data))
             if json_data["agent"]=="master":
                 if json_data["action"]=="response/read":
                     reachable_ip = []
                     for chunk in json_data["data"]:
                         for chunk_server in chunk["chunk_servers"]:
-                            x=chunk_server["ip"].split(':')
+                            x=chunk_server["ip"].split('.')
                             reachable_ip.append(x)
                         
                         sending_ip = self.find_nearest(reachable_ip)
@@ -56,9 +61,6 @@ class ListenMasterChunkServer(Thread):
                             if target_server["ip"] == sending_ip:
                                 sending_port = target_server["port"]
                                 break
-                        print("p: "+str(sending_port))
-                        print("i: "+sending_ip)
-                        print(target_server)
                         request_data = {}
                         request_data["agent"] = "client"
                         request_data["action"] = "request/read"
@@ -67,20 +69,23 @@ class ListenMasterChunkServer(Thread):
                         request_data["data"] = []
                         my_data = {}
                         my_data["handle"] = chunk["chunk_handle"]
-                        my_data["start_byte"] = byte_read[0]
-                        my_data["end_byte"] = byte_read[1]
+                        my_idx = chunk["chunk_index"]
+                        print("printing indices arr: ")
+                        print(indices_arr)
+                        for check in indices_arr:
+                            if check["idx"] == my_idx:
+                                my_data["start_byte"] = check["start_byte"]
+                                my_data["end_byte"] = check["end_byte"]
+                                break
                         request_data["data"].append(my_data)
                         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                         s.connect((sending_ip, sending_port))
-                        print("sending data to: "+sending_ip+str(sending_port))
-                        print(request_data)
-                        print(":::::::::::::::::::::::::::::::::::::::::::::::::::::")
                         s.sendall(str(request_data).encode())
                         s.close()
             elif json_data["agent"] == "slave":
                 print("data from slave")
                     
-        except:
+        except IOError:
             print("Not a json data")
         print(data)
 
@@ -95,7 +100,7 @@ class TakeUserInput(object):
         self.self_Port=int(self_ip_port[1])
         
     def run(self):
-        global byte_read
+        global indices_arr
         while True:
             command = input("Input the command: ")
             request_data = {}
@@ -107,22 +112,40 @@ class TakeUserInput(object):
                 fileName = input("Enter the filename: ")
                 byteRange = input("Enter the byte range which you want to read: (starting_kilobyte-ending_kilobyte) Eg. 1024-6352 ")
                 byte_read = byteRange.split('-')
-                start_idx = int(byte_read[0])/66560
-                end_idx = int(byte_read[1])/66560
+                start_idx = int(int(byte_read[0])/CHUNKSIZE)
+                end_idx = int(int(byte_read[1])/CHUNKSIZE)
                 request_data["action"] = "read"
                 request_data["data"]["file_name"] = fileName
                 request_data["data"]["idx"] = []
                 if start_idx == end_idx:
                     request_data["data"]["idx"].append(start_idx)
+                    book_keeping_info = {}
+                    book_keeping_info["start_byte"] = int(byte_read[0])
+                    book_keeping_info["end_byte"] = int(byte_read[1])
+                    book_keeping_info["idx"]= start_idx
+                    indices_arr.append(book_keeping_info)
                 else:
+                    f_i = start_idx
                     while start_idx<=end_idx:
+                        book_keeping_info = {}
+                        if start_idx == f_i:
+                            book_keeping_info["start_byte"] = int(byte_read[0]) - start_idx * CHUNKSIZE
+                            book_keeping_info["end_byte"] = CHUNKSIZE
+                        elif start_idx == end_idx:
+                            book_keeping_info["start_byte"] = 0
+                            book_keeping_info["end_byte"] = int(byte_read[1]) - start_idx * CHUNKSIZE
+                        else:
+                            book_keeping_info["start_byte"] = 0
+                            book_keeping_info["end_byte"] = CHUNKSIZE
+                        book_keeping_info["idx"] = start_idx
+                        indices_arr.append(copy.deepcopy(book_keeping_info))
                         request_data["data"]["idx"].append(int(start_idx))
                         start_idx+=1
+                    print("On taking input frm user: ")
+                    print(indices_arr)
             elif command == "snapshot":
                 request_data["action"] = "snapshot"
                 request_data["data"] = []
-            print("Outside while, data is: "+str(request_data))
-            print("Outside while, master is: "+self.Master_Ip+":"+str(self.Master_Port))
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((self.Master_Ip, self.Master_Port))
             s.sendall(str(request_data).encode())

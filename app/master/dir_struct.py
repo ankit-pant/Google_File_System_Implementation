@@ -16,11 +16,13 @@ class ChunkLoc:
     def __init__(self):
         self.chunks_mapping = []
         self.slaves_state = []
+
 # persistent---> namespace stores file structure while metadata stores file to chunks mapping
 class DumpObj:
     def __init__(self):
         self.fileNamespace=None
         self.metadata=[]
+        self.chunksDB=[]
 
 # used to create namespace
 class Tree:
@@ -77,6 +79,7 @@ class Tree:
                 chunk["chunk_index"] = c_num
                 j = {}
                 j["chunk_handle"]=chunk_hash
+                metaObj.chunksDB.append(chunk_hash)
                 j["servers"]=self.allocateServers()
                 globalChunkMapping.chunks_mapping.append(j)
                 
@@ -129,7 +132,7 @@ class Tree:
                 tree_root.children_ptr.append(new_obj)
                 return True, metaObj
         else:
-            return False, incoming[0], incoming[1]
+            return False, incoming
     
     def insert(self, name, isFile, tree_root, metaObj):
         parent_directories = name.split('/')
