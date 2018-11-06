@@ -50,12 +50,16 @@ class ListenClientMaster(Thread):
     def check_integrity(self, start_byte, end_byte, chunk_handle):
         start_block = int(start_byte/BLOCKSIZE)
         end_block = int(end_byte/BLOCKSIZE)
+        if start_byte % BLOCKSIZE == 0:
+            start_block-=1
+        if end_byte % BLOCKSIZE ==0:
+            end_block-=1
         file = open(chunk_handle+".dat","rb")
         for i in range(len(CHECKSUM_OBJ)):
             if CHECKSUM_OBJ[i]["chunk_handle"] == chunk_handle:
                 handle_index = i
                 break
-        #file.seek(start_byte)
+        file.seek(start_block * BLOCKSIZE)
         while start_block <= end_block:
             bytes_read = file.read(BLOCKSIZE)
             result = hashlib.sha1(bytes_read)
@@ -64,7 +68,7 @@ class ListenClientMaster(Thread):
                 file.close()
                 return False
             else:
-                break
+                continue
             start_block+=1
         file.close()
         return True
@@ -169,9 +173,10 @@ class ListenClientMaster(Thread):
                             notify_master["action"]="manipulated_chunk_found"
                             notify_master["data"].append(raw_data["handle"])
                             self.sock.close()
-                            print("sending manipulated chunk data to: "+self.master_ip+str(self.master_port))
+                            print("sending manipulated chunk data to master: "+self.master_ip+str(self.master_port))
                             self.send_json_data(self.master_ip, self.master_port, notify_master)
         except ValueError:
+            #also have to recieve data from other slave servers
             print("size of the data is: "+str(len(data)))
             flags = data[0:100]
             data = data[100:]
@@ -188,16 +193,34 @@ class ListenClientMaster(Thread):
             while k>=0:
                 del headers[null_idx[k]]
                 k-=1
+            action = headers[0]
+            chunk_type = headers[2]
             chunk_name = headers[1]+".dat"
             chunk_file = open(chunk_name, "wb")
             chunk_file.write(data)
-            checks = self.generate_checkSum(chunk_name)
-            c_obj = {}
-            c_obj["chunk_handle"] = headers[1]
-            c_obj["check_sums"] = checks
-            container.acquire()
-            CHECKSUM_OBJ.append(c_obj)
-            container.release()
+            chunk_file.close()
+            if action == "store":
+                with open('chunkServerState.json') as f:
+                    chunks_details = json.load(f)
+                fresh_chunk = {}
+                fresh_chunk["handle"] = headers[1]
+                if chunk_type == "pri":
+                    fresh_chunk["type"] = "primary"
+                elif chunk_type == "sec":
+                    fresh_chunk["type"] = "secondary"
+                chunks_details.append(fresh_chunk)
+                k=open('chunkServerState.json', 'w')
+                jsonString = json.dumps(chunks_details)
+                k.write(jsonString)
+                k.close()
+                checks = self.generate_checkSum(chunk_name)
+                c_obj = {}
+                c_obj["chunk_handle"] = headers[1]
+                c_obj["check_sums"] = checks
+                container.acquire()
+                CHECKSUM_OBJ.append(c_obj)
+                container.release()
+            
 
 def generate_chunkSum(file_name):
     file = open(file_name, "rb")

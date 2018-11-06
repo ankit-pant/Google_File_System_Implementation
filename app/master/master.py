@@ -45,11 +45,7 @@ class BgPoolChunkServer(object):
                 print(TCP_IP+"  "+str(TCP_PORT))
                 try:    
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                    try:
-                        s.connect((TCP_IP, TCP_PORT))
-                    except:
-                        #mark slave server as retired
-                        pass
+                    s.connect((TCP_IP, TCP_PORT))
                     s.sendall(str(send_data).encode())
                     s.close()
                 except:

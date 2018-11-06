@@ -1,25 +1,21 @@
 [{
 	"ip": "192.168.43.90",
-	"server_details": {
-		"disk_free_space": 52126734848
-	},
-	"port": 12003
+	"disk_free_space": 52126734848,
+	"port": 12003,
+    "chunks": []
 }, {
 	"ip": "192.168.43.90",
-	"server_details": {
-		"disk_free_space": 73126734848
-	},
-	"port": 12004
+	"disk_free_space": 73126734848,
+	"port": 12004,
+    "chunks": []
 }, {
 	"ip": "192.168.43.90",
-	"server_details": {
-		"disk_free_space": 33126734848
-	},
-	"port": 12005
+	"disk_free_space": 33126734848,
+	"port": 12005,
+    "chunks": []
 }, {
 	"ip": "192.168.43.90",
-	"server_details": {
-		"disk_free_space": 83126434848
-	},
-	"port": 12006
+	"disk_free_space": 83126434848,
+	"port": 12006,
+    "chunks": []
 }]

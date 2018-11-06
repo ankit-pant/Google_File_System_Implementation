@@ -129,9 +129,13 @@ class ListenClientChunkServer(Thread):
                                 orphaned_chunks_list.append(sc_handle)
                     
                     found = False
+                    fresh_chunks = [item["chunk_handle"] for item in j["data"] if item["chunk_handle"] not in orphaned_chunks_list]
                     for i in range(len(dir_struct.globalChunkMapping.slaves_state)):
                         if dir_struct.globalChunkMapping.slaves_state[i]["ip"] == j["ip"] and dir_struct.globalChunkMapping.slaves_state[i]["port"] == j["port"]:
                             dir_struct.globalChunkMapping.slaves_state[i]["disk_free_space"] = j["extras"]
+                            new_to_be_added = [item for item in fresh_chunks if item not in dir_struct.globalChunkMapping.slaves_state[i]["chunks"]]
+                            for new_chunk in new_to_be_added:
+                                dir_struct.globalChunkMapping.slaves_state[i]["chunks"].append(new_chunk)
                             found = True
                             break
                     if found == False:
@@ -139,6 +143,7 @@ class ListenClientChunkServer(Thread):
                         new_entry["ip"]=j["ip"]
                         new_entry["port"]=j["port"]
                         new_entry["disk_free_space"]=j["extras"]
+                        new_entry["chunks"] = fresh_chunks
                         dir_struct.globalChunkMapping.slaves_state.append(new_entry)
                     
                     

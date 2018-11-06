@@ -39,7 +39,7 @@ class Tree:
                 chunk_servers = json.load(f)
         except IOError:
             print("Unable to locate chunkservers in the database!")
-        chunk_servers.sort(key=lambda x: x["server_details"]["disk_free_space"], reverse=True)
+        chunk_servers.sort(key=lambda x: x["disk_free_space"], reverse=True)
         server_list = []
         p_replica = {}
         p_replica["ip"] = chunk_servers[0]["ip"]

@@ -193,16 +193,34 @@ class ListenClientMaster(Thread):
             while k>=0:
                 del headers[null_idx[k]]
                 k-=1
+            action = headers[0]
+            chunk_type = headers[2]
             chunk_name = headers[1]+".dat"
             chunk_file = open(chunk_name, "wb")
             chunk_file.write(data)
-            checks = self.generate_checkSum(chunk_name)
-            c_obj = {}
-            c_obj["chunk_handle"] = headers[1]
-            c_obj["check_sums"] = checks
-            container.acquire()
-            CHECKSUM_OBJ.append(c_obj)
-            container.release()
+            chunk_file.close()
+            if action == "store":
+                with open('chunkServerState.json') as f:
+                    chunks_details = json.load(f)
+                fresh_chunk = {}
+                fresh_chunk["handle"] = headers[1]
+                if chunk_type == "pri":
+                    fresh_chunk["type"] = "primary"
+                elif chunk_type == "sec":
+                    fresh_chunk["type"] = "secondary"
+                chunks_details.append(fresh_chunk)
+                k=open('chunkServerState.json', 'w')
+                jsonString = json.dumps(chunks_details)
+                k.write(jsonString)
+                k.close()
+                checks = self.generate_checkSum(chunk_name)
+                c_obj = {}
+                c_obj["chunk_handle"] = headers[1]
+                c_obj["check_sums"] = checks
+                container.acquire()
+                CHECKSUM_OBJ.append(c_obj)
+                container.release()
+            
 
 def generate_chunkSum(file_name):
     file = open(file_name, "rb")
