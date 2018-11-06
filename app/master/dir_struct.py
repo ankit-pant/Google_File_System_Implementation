@@ -12,12 +12,62 @@ config.read('master.properties')
 CHUNKSIZE = int(config.get('Master_Data','CHUNKSIZE'))
 
 # not persistent---> chunks to chunkserver mapping
+#==============================================================================
+#   CHUNKS MAPPING
+#   [{'chunk_handle': 'b37a3a8a72177acefead77b46c611eb664739754',
+#   'servers': [{'ip': '192.168.43.90',
+#     'isValidReplica': 1,
+#     'port': 12004,
+#     'type': 'secondary'},
+#    {'ip': '192.168.43.90',
+#     'isValidReplica': 1,
+#     'port': 12005,
+#     'type': 'primary'},
+#    {'ip': '192.168.43.90',
+#     'isValidReplica': 1,
+#     'port': 12006,
+#     'type': 'secondary'}]}, {.....}]
+#==============================================================================
+
+#==============================================================================
+# SLAVES STATE
+# [{'chunks': ['b37a3a8a72177acefead77b46c611eb664739754',
+#    '1b640eb1c5263587504d240d44b90dcbb39d81cf',
+#    '264491f7cdf87aa79906935b09f0bceabdb21084',
+#    'f10c900990d31ec2b28a8aa451c809e9a7876905',
+#    '1a0bbc11c05684237b5792bef3f783fa4ddbe994',
+#    'c92875fca0ed4e4b7640b54f7ef0ef446b5bdf2c',
+#    'ec4e1127ab1cb8725f8636172816dcd79023eb22',
+#    '445fe93f7fd422910e0464803d0d7563be6fa2c4',
+#    '4eb0196ac43668b11280a5641426bb6e9722616c',
+#    'cf0e53327567457e5dc5cd3ad7c0e76d83c9e13d',
+#    'e8e9aaa71b5ee21e3185c1a96111ec784c2677ff',
+#    '05f5cf65cc5143d1d80bb3a5d9dd03c633ebadca'],
+#   'disk_free_space': 65470001152,
+#   'ip': '192.168.43.90',
+#   'port': 12004}, {.......}]
+#==============================================================================
+
 class ChunkLoc:
     def __init__(self):
         self.chunks_mapping = []
         self.slaves_state = []
 
 # persistent---> namespace stores file structure while metadata stores file to chunks mapping
+#==============================================================================
+# CHUNKSDB
+# ['7b6c57ead60ec8726bc859f02be5d11c2d644a8a',
+#  '56b629cf3ae3bac4e80aa7ca897eb835ba989529',
+#  'b37a3a8a72177acefead77b46c611eb664739754',
+#  '1b640eb1c5263587504d240d44b90dcbb39d81cf',.........,]
+#==============================================================================
+
+#==============================================================================
+# METADATA
+# [{'chunkDetails': [{'chunk_handle': '7b6c57ead60ec8726bc859f02be5d11c2d644a8a',
+#     'chunk_index': 0},{........}],
+#     'fileHashName': 'fd95d257c98f2dba866571de1c43e8c93b058c6a'}]
+#==============================================================================
 class DumpObj:
     def __init__(self):
         self.fileNamespace=None

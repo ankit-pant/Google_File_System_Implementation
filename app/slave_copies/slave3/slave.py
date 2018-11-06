@@ -50,7 +50,7 @@ class ListenClientMaster(Thread):
     def check_integrity(self, start_byte, end_byte, chunk_handle):
         start_block = int(start_byte/BLOCKSIZE)
         end_block = int(end_byte/BLOCKSIZE)
-        if start_byte % BLOCKSIZE == 0:
+        if start_byte % BLOCKSIZE == 0 and start_byte!=0:
             start_block-=1
         if end_byte % BLOCKSIZE ==0:
             end_block-=1
@@ -59,24 +59,35 @@ class ListenClientMaster(Thread):
             if CHECKSUM_OBJ[i]["chunk_handle"] == chunk_handle:
                 handle_index = i
                 break
+        #print("Start block is: "+str(start_block)+" end block is: "+str(end_block))
         file.seek(start_block * BLOCKSIZE)
         while start_block <= end_block:
             bytes_read = file.read(BLOCKSIZE)
             result = hashlib.sha1(bytes_read)
             block_hash = result.hexdigest()
+            #print("Comparing for block: "+str(start_block))
+            #print("comparing curr: "+block_hash+" and "+CHECKSUM_OBJ[handle_index]["check_sums"][start_block])
             if CHECKSUM_OBJ[handle_index]["check_sums"][start_block] != block_hash:
                 file.close()
                 return False
             else:
+                start_block+=1
                 continue
-            start_block+=1
         file.close()
         return True
     
     def run(self):
         global CHECKSUM_OBJ
         global OK_REPORT
-        data = self.sock.recv(RCVCHUNKSIZE)
+        data = []
+        total_len = RCVCHUNKSIZE
+        while total_len:
+            data_rcv = self.sock.recv(RCVCHUNKSIZE)
+            if not data_rcv:
+                break
+            data.append(data_rcv)
+            total_len = total_len-len(data_rcv)
+        data = b''.join(data)
         try:
             str_data = data.decode().replace("\'", "\"")
             json_data = json.loads(str_data)
@@ -151,7 +162,7 @@ class ListenClientMaster(Thread):
                 if json_data["action"] == "request/read":
                     while not OK_REPORT:
                         pass
-                    
+                    print("Incoming read req data is: ",json_data)
                     for raw_data in json_data["data"]:
                         file_name = raw_data["handle"]+".dat"
                         start_byte = raw_data["start_byte"]
@@ -159,7 +170,10 @@ class ListenClientMaster(Thread):
                         if self.check_integrity(start_byte, end_byte, raw_data["handle"]):
                             print("Integrity is maintained, about to send data")
                             fp = open(file_name, 'rb')
-                            fp.seek(start_byte-1)
+                            if start_byte!=0:
+                                fp.seek(start_byte-1)
+                            else:
+                                fp.seek(start_byte)
                             read_buffer = fp.read(end_byte-start_byte+1)
                             fp.close()
                             #send this read_buffer over the socket connection to client

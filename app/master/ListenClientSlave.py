@@ -4,6 +4,7 @@ import socket
 import configparser
 import dir_struct
 import copy
+import pickle
 
 config = configparser.RawConfigParser()
 config.read('master.properties')
@@ -78,7 +79,7 @@ class ListenClientChunkServer(Thread):
                                     handle_details["chunk_index"] = chunk["chunk_index"]
                                     for cmap in dir_struct.globalChunkMapping.chunks_mapping:
                                         if cmap["chunk_handle"] == chunk["chunk_handle"]:
-                                            handle_details["chunk_servers"] = copy.deepcopy(cmap["chunk_servers"])
+                                            handle_details["chunk_servers"] = copy.deepcopy(cmap["servers"])
                                             break
                                     response_data["data"].append(handle_details)
                             break
@@ -114,16 +115,16 @@ class ListenClientChunkServer(Thread):
                         found = False
                         for i in range(len(dir_struct.globalChunkMapping.chunks_mapping)):
                             if dir_struct.globalChunkMapping.chunks_mapping[i]["chunk_handle"] == sc_handle:
-                                if server_id not in dir_struct.globalChunkMapping.chunks_mapping[i]["chunk_servers"]:
-                                    dir_struct.globalChunkMapping.chunks_mapping[i]["chunk_servers"].append(server_id)
+                                if server_id not in dir_struct.globalChunkMapping.chunks_mapping[i]["servers"]:
+                                    dir_struct.globalChunkMapping.chunks_mapping[i]["servers"].append(server_id)
                                 found = True
                                 break
                         if found==False:
                             if sc_handle in self.metaData.chunksDB:
                                 new_entry = {}
                                 new_entry["chunk_handle"] = sc_handle
-                                new_entry["chunk_servers"] = []
-                                new_entry["chunk_servers"].append(server_id)
+                                new_entry["servers"] = []
+                                new_entry["servers"].append(server_id)
                                 dir_struct.globalChunkMapping.chunks_mapping.append(new_entry)
                             else:
                                 orphaned_chunks_list.append(sc_handle)
@@ -167,18 +168,18 @@ class ListenClientChunkServer(Thread):
                     right_ips = []
                     for l in range(len(dir_struct.globalChunkMapping.chunks_mapping)):
                         if dir_struct.globalChunkMapping.chunks_mapping[l]["chunk_handle"] == wrong_chunk:
-                            for m in range(len(dir_struct.globalChunkMapping.chunks_mapping[l]["chunk_servers"])):
-                                servers = dir_struct.globalChunkMapping.chunks_mapping[l]["chunk_servers"][m]
+                            for m in range(len(dir_struct.globalChunkMapping.chunks_mapping[l]["servers"])):
+                                servers = dir_struct.globalChunkMapping.chunks_mapping[l]["servers"][m]
                                 if (servers["ip"] != j["ip"] or servers["port"] != j["port"]) and servers["isValidReplica"]:
                                     right_ips.append(servers["ip"])
                                 elif servers["ip"] == j["ip"] or servers["port"] == j["port"]:
-                                    dir_struct.globalChunkMapping.chunks_mapping[l]["chunk_servers"][m]["isValidReplica"]=0
+                                    dir_struct.globalChunkMapping.chunks_mapping[l]["servers"][m]["isValidReplica"]=0
                             r_ip = []
                             for x in right_ips:
                                 y=x.split('.')
                                 r_ip.append(y)
                             seeding_ip = self.find_nearest(r_ip)
-                            for server in dir_struct.globalChunkMapping.chunks_mapping[l]["chunk_servers"]:
+                            for server in dir_struct.globalChunkMapping.chunks_mapping[l]["servers"]:
                                 if server["ip"] == seeding_ip and server["isValidReplica"]:
                                     seeding_port = server["port"]
                                     break
@@ -195,4 +196,5 @@ class ListenClientChunkServer(Thread):
                     seeding_data["data"]["infected_chunk_handle"] = wrong_chunk
                     self.sock.close()
                     self.send_json_data(seeding_ip, seeding_port, seeding_data)
-                        
+                
+                
