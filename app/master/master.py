@@ -15,6 +15,7 @@ import pickle
 import time
 import socket
 import sys
+import reReplicateChunk
 import configparser
 from ListenClientSlave import ListenClientChunkServer
 
@@ -23,11 +24,12 @@ config.read('master.properties')
 Json_rcv_limit = int(config.get('Master_Data','JSON_RCV_LIMIT'))
 
 class BgPoolChunkServer(object):
-    def __init__(self, chunk_servers, self_ip_port, interval=5):
+    def __init__(self, metaData, chunk_servers, self_ip_port, interval=5):
         self.interval = interval
         self.chunk_servers = chunk_servers
         self.ip = self_ip_port[0]
         self.port = int(self_ip_port[1])
+        self.metadata = metaData
         thread = Thread(target=self.run, args=())
         thread.daemon = True
         thread.start()
@@ -42,14 +44,13 @@ class BgPoolChunkServer(object):
             for c_server in self.chunk_servers:
                 TCP_IP=c_server["ip"]
                 TCP_PORT=c_server["port"]
-                print(TCP_IP+"  "+str(TCP_PORT))
                 try:    
                     s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                     s.connect((TCP_IP, TCP_PORT))
                     s.sendall(str(send_data).encode())
                     s.close()
                 except:
-                    #print("Connection refused by the slaveServer: "+TCP_IP+":"+str(TCP_PORT))
+                    reReplicateChunk.distribute_load(self.ip, self.port, TCP_IP, TCP_PORT, self.metadata, task="old_removed")
                     continue
             time.sleep(self.interval)
 
@@ -69,9 +70,10 @@ for server in chunk_servers:
 
 self_ip_port = str(sys.argv[1]).split(":")
 print(self_ip_port)
-bgthread = BgPoolChunkServer(servers_ip_port, self_ip_port)
+
 
 dir_struct.globalChunkMapping = ChunkLoc()
+dir_struct.globalChunkMapping.slaves_state = chunk_servers
 try:
     pklFile = open('masterState','rb')
     metaData = pickle.load(pklFile)
@@ -92,6 +94,8 @@ except IOError:
     master_state = open('masterState','ab')
     pickle.dump(metaData, master_state)
     master_state.close()
+
+bgthread = BgPoolChunkServer(metaData, servers_ip_port, self_ip_port)
 
 tcpsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 tcpsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

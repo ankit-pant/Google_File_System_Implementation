@@ -85,9 +85,9 @@ class ListenMasterChunkServer(Thread):
             elif json_data["agent"] == "slave":
                 print("data from slave")
                     
-        except IOError:
-            print("Not a json data")
-        print(data)
+        except ValueError:
+            print("Data recieved from the chunk server")
+            #print(data)
 
 class TakeUserInput(object):
     def __init__(self,master_ip_port,self_ip_port):

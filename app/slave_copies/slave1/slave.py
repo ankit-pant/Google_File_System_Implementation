@@ -2,6 +2,7 @@ from threading import Thread, BoundedSemaphore
 import socket
 import sys
 import os
+from time import sleep
 import json
 import configparser
 import hashlib
@@ -9,6 +10,7 @@ import hashlib
 OK_REPORT = False
 CHECKSUM_OBJ = []
 container = BoundedSemaphore()
+chunks_state = []
 
 config = configparser.RawConfigParser()
 config.read('slave.properties')
@@ -75,6 +77,49 @@ class ListenClientMaster(Thread):
                 continue
         file.close()
         return True
+    
+    def check_send_data(self, start_byte, end_byte, handle, clients_ip, clients_port):
+        if self.check_integrity(start_byte, end_byte, handle):
+            print("Integrity is maintained, about to send data")
+            file_name = handle+".dat"
+            fp = open(file_name, 'rb')
+            if start_byte!=0:
+                fp.seek(start_byte-1)
+            else:
+                fp.seek(start_byte)
+            read_buffer = fp.read(end_byte-start_byte+1)
+            fp.close()
+            #send this read_buffer over the socket connection to client
+            try:    
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                print("Connecting to: "+ip+str(port))
+                s.connect((clients_ip, clients_port))
+                s.sendall(read_buffer)
+                s.close()
+            except:
+                print("Connection refused by the client: "+clients_ip+":"+str(clients_port))
+        else:
+            print("Integrity not maintained, about to notify master")
+            for c in range(len(chunks_state)):
+                if chunks_state[c]["handle"] == handle:
+                    chunks_state[c]["isValid"] = False
+                    break
+            notify_master = {}
+            notify_master["agent"]="chunk_server"
+            notify_master["ip"]=self.ip
+            notify_master["port"]=self.port
+            notify_master["data"]=[]
+            notify_master["action"]="manipulated_chunk_found"
+            notify_master["data"].append(handle)
+            self.sock.close()
+            print("sending manipulated chunk data to master: "+self.master_ip+str(self.master_port))
+            self.send_json_data(self.master_ip, self.master_port, notify_master)
+            self.sock.close()
+            while not chunks_state[c]["isValid"]:
+                print("Waiting for the chunk to be recieved from another slave server")
+                sleep(1)
+            self.check_send_data(start_byte, end_byte, handle, clients_ip, clients_port)
+    
     
     def run(self):
         global CHECKSUM_OBJ
@@ -155,28 +200,23 @@ class ListenClientMaster(Thread):
                             OK_REPORT=True
                             print("Report is OK")
                     elif json_data["action"] == "seedChunkToSlave":
-                        print("Seeding chunk to the slave")
                         # seed chunk to slave
-                        
-            elif json_data["agent"]=="client":
-                if json_data["action"] == "request/read":
-                    while not OK_REPORT:
-                        pass
-                    print("Incoming read req data is: ",json_data)
-                    for raw_data in json_data["data"]:
-                        file_name = raw_data["handle"]+".dat"
-                        start_byte = raw_data["start_byte"]
-                        end_byte = raw_data["end_byte"]
-                        if self.check_integrity(start_byte, end_byte, raw_data["handle"]):
-                            print("Integrity is maintained, about to send data")
-                            fp = open(file_name, 'rb')
-                            if start_byte!=0:
-                                fp.seek(start_byte-1)
-                            else:
-                                fp.seek(start_byte)
-                            read_buffer = fp.read(end_byte-start_byte+1)
-                            fp.close()
-                            #send this read_buffer over the socket connection to client
+                        print("Seeding chunk to the slave")
+                        inf_ip = json_data["data"]["infected_slave_ip"]
+                        inf_port = json_data["data"]["infected_slave_port"]
+                        inf_chunk_handle = json_data["data"]["infected_chunk_handle"]
+                        chunk_name = inf_chunk_handle+".dat"
+                        if self.check_integrity(0, CHUNKSIZE-1, json_data["data"]["infected_chunk_handle"]):
+                            print("Integrity is maintained, about to send data to the slave")
+                            fp = open(chunk_name, "rb")
+                            read_buff = fp.read(CHUNKSIZE)
+                            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            print("Connecting to: "+ip+str(port))
+                            s.connect((inf_ip, inf_port))
+                            chunk_data = (DELIMITER+"resto"+DELIMITER+inf_chunk_handle+DELIMITER+"NuN"+DELIMITER).encode()+read_buff
+                            #create data 
+                            s.sendall(chunk_data)
+                            s.close()
                         else:
                             print("Integrity not maintained, about to notify master")
                             notify_master = {}
@@ -185,10 +225,25 @@ class ListenClientMaster(Thread):
                             notify_master["port"]=self.port
                             notify_master["data"]=[]
                             notify_master["action"]="manipulated_chunk_found"
-                            notify_master["data"].append(raw_data["handle"])
+                            notify_master["data"].append(json_data["data"]["infected_chunk_handle"])
                             self.sock.close()
                             print("sending manipulated chunk data to master: "+self.master_ip+str(self.master_port))
                             self.send_json_data(self.master_ip, self.master_port, notify_master)
+                    
+                    elif json_data["action"] == "balance_load":
+                        print(json_data)
+            
+            elif json_data["agent"]=="client":
+                if json_data["action"] == "request/read":
+                    while not OK_REPORT:
+                        pass
+                    print("Incoming read req data is: ",json_data)
+                    for raw_data in json_data["data"]:
+                        start_byte = raw_data["start_byte"]
+                        end_byte = raw_data["end_byte"]
+                        self.check_send_data(start_byte, end_byte, raw_data["handle"], json_data["ip"], json_data["port"])
+                            
+                                
         except ValueError:
             #also have to recieve data from other slave servers
             print("size of the data is: "+str(len(data)))
@@ -234,6 +289,25 @@ class ListenClientMaster(Thread):
                 container.acquire()
                 CHECKSUM_OBJ.append(c_obj)
                 container.release()
+                c_state = {}
+                c_state["handle"] = headers[1]
+                c_state["isValid"] = True
+                chunks_state.append(c_state)
+            elif action=="resto":
+                print("Data retrieved by another slave")
+                for c in range(len(chunks_state)):
+                    if chunks_state[c]["handle"] == headers[1]:
+                        chunks_state[c]["isValid"] = True
+                        break
+                self.sock.close()
+                notify_master = {}
+                notify_master["agent"]="chunk_server"
+                notify_master["ip"]=self.ip
+                notify_master["port"]=self.port
+                notify_master["action"]="recieved_correct_chunk"
+                notify_master["data"]={}
+                notify_master["handle"] = headers[1]
+                self.send_json_data(self.master_ip, self.master_port, notify_master)
             
 
 def generate_chunkSum(file_name):
@@ -257,13 +331,36 @@ try:
         c_obj["chunk_handle"] = chunk["chunk_handle"]
         c_obj["check_sums"] = generate_chunkSum(file_name)
         CHECKSUM_OBJ.append(c_obj)
+        c_state = {}
+        c_state["handle"] = chunk["chunk_handle"]
+        c_state["isValid"] = True
+        chunks_state.append(c_state)
 except IOError:
     print("Unable to load chunks details")
+
+self_IP_PORT = str(sys.argv[1]).split(':')
+masterIp = str(config.get('Slave_Data','MASTER_IP'))
+masterPort = int(config.get('Slave_Data','MASTER_PORT'))
+
+try:    
+    s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    bootdata = {}
+    bootdata["agent"] = "chunk_server"
+    bootdata["action"] = "new_chunk_server"
+    bootdata["data"] = {}
+    bootdata["ip"] = self_IP_PORT[0]
+    bootdata["port"] = int(self_IP_PORT[1])
+    bootdata["data"]["disk_free_space"] = (os.statvfs('/').f_bsize) * (os.statvfs('/').f_bavail)
+    print("Connecting to: "+masterIp+str(masterPort))
+    s.connect((masterIp, masterPort))
+    s.sendall(str(bootdata).encode())
+    s.close()
+except:
+    print("Connection refused by the master: "+masterIp+":"+str(masterPort))
 
 
 tcpsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 tcpsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-self_IP_PORT = str(sys.argv[1]).split(':')
 tcpsock.bind((self_IP_PORT[0], int(self_IP_PORT[1])))
 
 while True:

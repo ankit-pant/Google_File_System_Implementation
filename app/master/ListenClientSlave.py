@@ -4,6 +4,7 @@ import socket
 import configparser
 import dir_struct
 import copy
+import reReplicateChunk
 import pickle
 
 config = configparser.RawConfigParser()
@@ -134,9 +135,8 @@ class ListenClientChunkServer(Thread):
                     for i in range(len(dir_struct.globalChunkMapping.slaves_state)):
                         if dir_struct.globalChunkMapping.slaves_state[i]["ip"] == j["ip"] and dir_struct.globalChunkMapping.slaves_state[i]["port"] == j["port"]:
                             dir_struct.globalChunkMapping.slaves_state[i]["disk_free_space"] = j["extras"]
-                            new_to_be_added = [item for item in fresh_chunks if item not in dir_struct.globalChunkMapping.slaves_state[i]["chunks"]]
-                            for new_chunk in new_to_be_added:
-                                dir_struct.globalChunkMapping.slaves_state[i]["chunks"].append(new_chunk)
+                            del dir_struct.globalChunkMapping.slaves_state[i]["chunks"][:]
+                            dir_struct.globalChunkMapping.slaves_state[i]["chunks"] = fresh_chunks
                             found = True
                             break
                     if found == False:
@@ -196,5 +196,31 @@ class ListenClientChunkServer(Thread):
                     seeding_data["data"]["infected_chunk_handle"] = wrong_chunk
                     self.sock.close()
                     self.send_json_data(seeding_ip, seeding_port, seeding_data)
-                
-                
+            
+            elif j["action"] == "resto":
+                print("Message Recieved by slave to set up the replica bit")
+                for l in range(len(dir_struct.globalChunkMapping.chunks_mapping)):
+                        if dir_struct.globalChunkMapping.chunks_mapping[l]["chunk_handle"] == j["data"]["handle"]:
+                            for m in range(len(dir_struct.globalChunkMapping.chunks_mapping[l]["servers"])):
+                                servers = dir_struct.globalChunkMapping.chunks_mapping[l]["servers"][m]
+                                if (servers["ip"] != j["ip"] or servers["port"] != j["port"]) and not servers["isValidReplica"]:
+                                    dir_struct.globalChunkMapping.chunks_mapping[l]["servers"][m]["isValidReplica"] = 1
+                                    print("Field of valid replica set to true")
+            elif j["action"] == "new_chunk_server":
+                print("1")
+                slave_found = False
+                for slaves in dir_struct.globalChunkMapping.slaves_state:
+                    if slaves["ip"] == j["ip"] and slaves["port"] == j["port"]:
+                        slave_found = True
+                        break
+                if not slave_found:
+                    print("2")
+                    allSlavesUpdated = False
+                    while not allSlavesUpdated:
+                        allSlavesUpdated = True
+                        for slaves in dir_struct.globalChunkMapping.slaves_state:
+                            if len(slaves["chunks"]) == 0:
+                                allSlavesUpdated = False
+                                print("slaves not updated")
+                                break
+                    reReplicateChunk.distribute_load(self.ip, self.port, j["ip"], j["port"], self.metaData, j["data"]["disk_free_space"], "new_added")
