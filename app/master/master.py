@@ -104,9 +104,7 @@ tcpsock.bind((self_ip_port[0], int(self_ip_port[1])))
 
 while True:
     tcpsock.listen(1000)
-    print ("Waiting for incoming connections...")
     (conn, (ip,port)) = tcpsock.accept()
-    print ('Got connection from ', (ip,port))
     listenthread = ListenClientChunkServer(metaData, conn, self_ip_port[0], int(self_ip_port[1]))
     listenthread.daemon = True
     listenthread.start()

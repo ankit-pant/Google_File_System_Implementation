@@ -38,7 +38,7 @@ class ListenClientMaster(Thread):
         except:
             print("Connection refused by the master: "+ip+":"+str(port))
             
-    def generate_chunkSum(self, file_name):
+    def generate_checkSum(self, file_name):
         file = open(file_name, "rb")
         check_sum = []
         bytes_read = file.read(BLOCKSIZE)
@@ -57,25 +57,33 @@ class ListenClientMaster(Thread):
         if end_byte % BLOCKSIZE ==0:
             end_block-=1
         file = open(chunk_handle+".dat","rb")
+        container.acquire()
         for i in range(len(CHECKSUM_OBJ)):
             if CHECKSUM_OBJ[i]["chunk_handle"] == chunk_handle:
                 handle_index = i
                 break
-        #print("Start block is: "+str(start_block)+" end block is: "+str(end_block))
+        container.release()
+        print("Start block is: "+str(start_block)+" end block is: "+str(end_block))
         file.seek(start_block * BLOCKSIZE)
         while start_block <= end_block:
             bytes_read = file.read(BLOCKSIZE)
             result = hashlib.sha1(bytes_read)
             block_hash = result.hexdigest()
-            #print("Comparing for block: "+str(start_block))
+            print("Comparing for block: "+str(start_block))
             #print("comparing curr: "+block_hash+" and "+CHECKSUM_OBJ[handle_index]["check_sums"][start_block])
-            if CHECKSUM_OBJ[handle_index]["check_sums"][start_block] != block_hash:
+            container.acquire()
+            c_hash = CHECKSUM_OBJ[handle_index]["check_sums"][start_block]
+            container.release()
+            print("Found c hashed")
+            if c_hash != block_hash:
                 file.close()
+                print("Returning false")
                 return False
             else:
                 start_block+=1
                 continue
         file.close()
+        print("Returning True")
         return True
     
     def check_send_data(self, start_byte, end_byte, handle, clients_ip, clients_port):
@@ -92,7 +100,7 @@ class ListenClientMaster(Thread):
             #send this read_buffer over the socket connection to client
             try:    
                 s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                print("Connecting to: "+ip+str(port))
+                print("Connecting to: "+ip+":"+str(port))
                 s.connect((clients_ip, clients_port))
                 s.sendall(read_buffer)
                 s.close()
@@ -121,6 +129,98 @@ class ListenClientMaster(Thread):
             self.check_send_data(start_byte, end_byte, handle, clients_ip, clients_port)
     
     
+    def replicate_chunks(self, handle, chunk_type, ip, port):
+        if self.check_integrity(0, CHUNKSIZE-1, handle):
+            if chunk_type == "":
+                for chunk in chunks_state:
+                    if chunk["handle"] == handle:
+                        print("Integrity is maintained, about to send data to the slave")
+                        fp = open(handle+".dat", "rb")
+                        read_buff = fp.read(CHUNKSIZE)
+                        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        print("Connecting to: "+ip+str(port))
+                        s.connect((ip, port))
+                        if chunk["type"] == "primary":
+                            c_type = "pri"
+                        else:
+                            c_type = "sec"
+                        chunk_data = (DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER).encode()+read_buff
+                        #create data 
+                        s.sendall(chunk_data)
+                        s.close()
+                        break
+                os.remove(handle+".dat")
+                container.acquire()
+                try:
+                    with open('chunkServerState.json') as f:
+                        chunks_details = json.load(f)
+                except IOError:
+                    resp = "Unable to retrieve chunks details!"
+                container.release()
+                remove_entries = []
+                for i in range(len(chunks_details)):
+                    if chunks_details[i]["chunk_handle"] == handle:
+                        remove_entries.append(i)
+                        break
+                todel_checksums = []
+                # DELETING ENTRY FROM CHECKSUMS
+                container.acquire()
+                for k in range(len(CHECKSUM_OBJ)):
+                    if CHECKSUM_OBJ[k]["chunk_handle"] == handle:
+                        todel_checksums.append(i)
+                        break
+                container.release()
+                
+                for todel in reversed(remove_entries):
+                    del chunks_details[todel]
+                container.acquire()
+                for tod in reversed(todel_checksums):
+                    del CHECKSUM_OBJ[tod]
+                container.release()
+                container.acquire()
+                k=open('chunkServerState.json', 'w')
+                jsonString = json.dumps(chunks_details)
+                k.write(jsonString)
+                k.close()
+                container.release()
+            else:
+                print("Integrity is maintained, about to send data to the slave")
+                fp = open(handle+".dat", "rb")
+                read_buff = fp.read(CHUNKSIZE)
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                print("Connecting to: "+ip+str(port))
+                s.connect((ip, port))
+                if chunk_type == "primary":
+                    c_type = "pri"
+                else:
+                    c_type = "sec"
+                chunk_data = (DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER).encode()+read_buff
+                #create data 
+                s.sendall(chunk_data)
+                s.close()
+        else:
+            print("Integrity not maintained, about to notify master")
+            for c in range(len(chunks_state)):
+                if chunks_state[c]["handle"] == handle:
+                    chunks_state[c]["isValid"] = False
+                    break
+            notify_master = {}
+            notify_master["agent"]="chunk_server"
+            notify_master["ip"]=self.ip
+            notify_master["port"]=self.port
+            notify_master["data"]=[]
+            notify_master["action"]="manipulated_chunk_found"
+            notify_master["data"].append(handle)
+            self.sock.close()
+            print("sending manipulated chunk data to master: "+self.master_ip+str(self.master_port))
+            self.send_json_data(self.master_ip, self.master_port, notify_master)
+            self.sock.close()
+            while not chunks_state[c]["isValid"]:
+                print("Waiting for the chunk to be recieved from another slave server")
+                sleep(1)
+            self.replicate_chunks(handle,chunk_type,ip,port)
+        
+                
     def run(self):
         global CHECKSUM_OBJ
         global OK_REPORT
@@ -232,6 +332,17 @@ class ListenClientMaster(Thread):
                     
                     elif json_data["action"] == "balance_load":
                         print(json_data)
+                        threads = []
+                        target_ip = json_data["data"]["target_ip"]
+                        target_port = json_data["data"]["target_port"]
+                        for s_chunk in json_data["data"]["balancing_chunk_handles"]:
+                            incoming_chunk_type = s_chunk["type"]
+                            incoming_chunk_handle = s_chunk["handle"]
+                            t = Thread(target=self.replicate_chunks, args=(incoming_chunk_handle, incoming_chunk_type, target_ip, target_port))
+                            threads.append(t)
+                            t.start()
+                        for t in threads:
+                            t.join()
             
             elif json_data["agent"]=="client":
                 if json_data["action"] == "request/read":
@@ -269,19 +380,23 @@ class ListenClientMaster(Thread):
             chunk_file.write(data)
             chunk_file.close()
             if action == "store":
+                container.acquire()
                 with open('chunkServerState.json') as f:
                     chunks_details = json.load(f)
+                container.release()
                 fresh_chunk = {}
-                fresh_chunk["handle"] = headers[1]
+                fresh_chunk["chunk_handle"] = headers[1]
                 if chunk_type == "pri":
                     fresh_chunk["type"] = "primary"
                 elif chunk_type == "sec":
                     fresh_chunk["type"] = "secondary"
                 chunks_details.append(fresh_chunk)
+                container.acquire()
                 k=open('chunkServerState.json', 'w')
                 jsonString = json.dumps(chunks_details)
                 k.write(jsonString)
                 k.close()
+                container.release()
                 checks = self.generate_checkSum(chunk_name)
                 c_obj = {}
                 c_obj["chunk_handle"] = headers[1]
@@ -292,6 +407,7 @@ class ListenClientMaster(Thread):
                 c_state = {}
                 c_state["handle"] = headers[1]
                 c_state["isValid"] = True
+                c_state["type"] = fresh_chunk["type"]
                 chunks_state.append(c_state)
             elif action=="resto":
                 print("Data retrieved by another slave")
@@ -310,7 +426,7 @@ class ListenClientMaster(Thread):
                 self.send_json_data(self.master_ip, self.master_port, notify_master)
             
 
-def generate_chunkSum(file_name):
+def generate_checkSum(file_name):
     file = open(file_name, "rb")
     check_sum = []
     bytes_read = file.read(BLOCKSIZE)
@@ -329,10 +445,11 @@ try:
         file_name = chunk["chunk_handle"]+".dat"
         c_obj = {}
         c_obj["chunk_handle"] = chunk["chunk_handle"]
-        c_obj["check_sums"] = generate_chunkSum(file_name)
+        c_obj["check_sums"] = generate_checkSum(file_name)
         CHECKSUM_OBJ.append(c_obj)
         c_state = {}
         c_state["handle"] = chunk["chunk_handle"]
+        c_state["type"] = chunk["type"]
         c_state["isValid"] = True
         chunks_state.append(c_state)
 except IOError:

@@ -71,7 +71,10 @@ def distribute_load(self_ip, self_port, target_ip, target_port, metadata, disk_f
                         for n in range(len(mod_servers_list)):
                             if mod_servers_list[n]["ip"] == dir_struct.globalChunkMapping.slaves_state[0]["ip"] and mod_servers_list[n]["port"] == dir_struct.globalChunkMapping.slaves_state[0]["port"]:
                                 already_exist = True
-                                mod_servers_list[n]["chunks"].append(slave_chunk_handle)
+                                bal_chunks = {}
+                                bal_chunks["type"] = ""
+                                bal_chunks["handle"] = slave_chunk_handle
+                                mod_servers_list[n]["chunks"].append(bal_chunks)
                                 break
                         
                         if not already_exist:
@@ -79,7 +82,10 @@ def distribute_load(self_ip, self_port, target_ip, target_port, metadata, disk_f
                             mod_server["ip"] = dir_struct.globalChunkMapping.slaves_state[0]["ip"]
                             mod_server["port"] = dir_struct.globalChunkMapping.slaves_state[0]["port"]
                             mod_server["chunks"] = []
-                            mod_server["chunks"].append(slave_chunk_handle)
+                            bal_chunks = {}
+                            bal_chunks["handle"] = slave_chunk_handle
+                            bal_chunks["type"] = ""
+                            mod_server["chunks"].append(bal_chunks)
                             mod_servers_list.append(mod_server)
                             
                         for p in range(len(dir_struct.globalChunkMapping.chunks_mapping)):
@@ -115,7 +121,7 @@ def distribute_load(self_ip, self_port, target_ip, target_port, metadata, disk_f
                 s.sendall(str(sending_data).encode())
                 s.close()
             except:
-                print("Connection refused by the master: "+seed_ip+":"+str(seed_port))
+                print("Connection refused by the slave server: "+seed_ip+":"+str(seed_port))
                     
         new_slave_entry = {}
         new_slave_entry["ip"] = target_ip
@@ -135,11 +141,11 @@ def distribute_load(self_ip, self_port, target_ip, target_port, metadata, disk_f
         new_slave["disk_free_space"] = disk_free_space
         old_chunk_servers.append(new_slave)
         
-#==============================================================================
-#         f = open('chunk_servers.json', 'w')
-#         f.write(str(old_chunk_servers).replace("\'","\""))
-#         f.close()
-#==============================================================================
+        f = open('chunk_servers.json', 'w')
+        jsonString = json.dumps(old_chunk_servers)
+        f.write(jsonString)
+        f.close()
+        
     elif task == "old_removed":
         print("A slave with ip: ", target_ip, " and port: ",target_port, "is down")
         target_chunks = []
@@ -164,10 +170,10 @@ def distribute_load(self_ip, self_port, target_ip, target_port, metadata, disk_f
                                 if dir_struct.globalChunkMapping.chunks_mapping[j]["servers"][k]["ip"] == target_ip and dir_struct.globalChunkMapping.chunks_mapping[j]["servers"][k]["port"] == target_port:
                                     chunk_type = dir_struct.globalChunkMapping.chunks_mapping[j]["servers"][k]["type"]
                                     new_server["type"] = chunk_type
-                                    updated_entry["type"] = chunk_type
-                                    del dir_struct.globalChunkMapping.chunks_mapping[j]["servers"][k]
+                                    del_index = k
                                 else:
                                     right_ips.append(dir_struct.globalChunkMapping.chunks_mapping[j]["servers"][k]["ip"])        
+                            del dir_struct.globalChunkMapping.chunks_mapping[j]["servers"][del_index]
                             r_ip = []
                             for x in right_ips:
                                 y=x.split('.')
@@ -185,11 +191,59 @@ def distribute_load(self_ip, self_port, target_ip, target_port, metadata, disk_f
                             dir_struct.globalChunkMapping.chunks_mapping[j]["servers"].append(new_server)
                             break
                     dir_struct.globalChunkMapping.slaves_state[i]["disk_free_space"] -= 64*1024*1024
-                    updated_entry["recieving_ip"] = dir_struct.globalChunkMapping.slaves_state[i]["ip"]
-                    updated_entry["recieving_port"] = dir_struct.globalChunkMapping.slaves_state[i]["port"]
-                    updated_entry["chunk_handle"] = t_chunk
-                    updated_obj.append(updated_entry)
+                    obj_created = False
+                    for l in range(len(updated_obj)):
+                        c_server = updated_obj[l]
+                        if c_server["recieving_ip"] == dir_struct.globalChunkMapping.slaves_state[i]["ip"] and c_server["recieving_port"] == dir_struct.globalChunkMapping.slaves_state[i]["port"] and c_server["seeding_ip"] == seeding_ip and c_server["seeding_port"] == seeding_port:
+                            chunk_details = {}
+                            chunk_details["type"] = new_server["type"]
+                            chunk_details["handle"] = t_chunk
+                            updated_obj[l]["data"].append(chunk_details)
+                            obj_created = True
+                            break
+                    if not obj_created:
+                        chunk_details = {}
+                        chunk_details["type"] = new_server["type"]
+                        chunk_details["handle"] = t_chunk
+                        updated_entry["recieving_ip"] = dir_struct.globalChunkMapping.slaves_state[i]["ip"]
+                        updated_entry["recieving_port"] = dir_struct.globalChunkMapping.slaves_state[i]["port"]
+                        updated_entry["data"]=[]
+                        updated_entry["data"].append(chunk_details)
+                        updated_obj.append(updated_entry)
                     break      
+            
+        try:
+            with open('chunk_servers.json') as f:
+                old_chunk_servers = json.load(f)
+        except IOError:
+            print("Unable to locate chunkservers in the database!")
         
-        print(updated_obj)            
+        for i in range(len(old_chunk_servers)):
+            if old_chunk_servers[i]["ip"] == target_ip and old_chunk_servers[i]["port"] == target_port:
+                del old_chunk_servers[i]
+                break
+        
+        f = open('chunk_servers.json','w')
+        jsonString = json.dumps(old_chunk_servers)
+        f.write(jsonString)
+        f.close()
+        
+        for u_server in updated_obj:
+            balance_data = {}
+            balance_data["ip"] = self_ip
+            balance_data["port"] = self_port
+            balance_data["agent"] = "master"
+            balance_data["action"] = "balance_load"
+            balance_data["data"] = {}
+            balance_data["data"]["target_ip"] = u_server["recieving_ip"]
+            balance_data["data"]["target_port"] = u_server["recieving_port"]
+            balance_data["data"]["balancing_chunk_handles"] = u_server["data"]
+            try:    
+                s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                s.connect((u_server["seeding_ip"], u_server["seeding_port"]))
+                s.sendall(str(balance_data).encode())
+                s.close()
+            except:
+                print("Connection refused by the slave server: "+u_server["seeding_ip"]+":"+str(u_server["seeding_port"]))
+        
                 
