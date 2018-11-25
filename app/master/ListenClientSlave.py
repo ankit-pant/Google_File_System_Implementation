@@ -207,14 +207,12 @@ class ListenClientChunkServer(Thread):
                                     dir_struct.globalChunkMapping.chunks_mapping[l]["servers"][m]["isValidReplica"] = 1
                                     print("Field of valid replica set to true")
             elif j["action"] == "new_chunk_server":
-                print("1")
                 slave_found = False
                 for slaves in dir_struct.globalChunkMapping.slaves_state:
                     if slaves["ip"] == j["ip"] and slaves["port"] == j["port"]:
                         slave_found = True
                         break
                 if not slave_found:
-                    print("2")
                     allSlavesUpdated = False
                     while not allSlavesUpdated:
                         allSlavesUpdated = True

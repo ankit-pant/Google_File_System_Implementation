@@ -57,37 +57,36 @@ class ListenClientMaster(Thread):
         if end_byte % BLOCKSIZE ==0:
             end_block-=1
         file = open(chunk_handle+".dat","rb")
-        container.acquire()
         for i in range(len(CHECKSUM_OBJ)):
             if CHECKSUM_OBJ[i]["chunk_handle"] == chunk_handle:
                 handle_index = i
                 break
-        container.release()
         print("Start block is: "+str(start_block)+" end block is: "+str(end_block))
         file.seek(start_block * BLOCKSIZE)
+        print("size of the checsum_obj is: ",len(CHECKSUM_OBJ[handle_index]["check_sums"]))
+        print("hash is: ",chunk_handle)
         while start_block <= end_block:
             bytes_read = file.read(BLOCKSIZE)
             result = hashlib.sha1(bytes_read)
             block_hash = result.hexdigest()
-            print("Comparing for block: "+str(start_block))
+            #print("Comparing for block: "+str(start_block))
             #print("comparing curr: "+block_hash+" and "+CHECKSUM_OBJ[handle_index]["check_sums"][start_block])
-            container.acquire()
             c_hash = CHECKSUM_OBJ[handle_index]["check_sums"][start_block]
-            container.release()
-            print("Found c hashed")
+            #print("Found c hashed")
             if c_hash != block_hash:
-                file.close()
-                print("Returning false")
+                file.close()                
                 return False
             else:
                 start_block+=1
                 continue
         file.close()
-        print("Returning True")
         return True
     
     def check_send_data(self, start_byte, end_byte, handle, clients_ip, clients_port):
-        if self.check_integrity(start_byte, end_byte, handle):
+        container.acquire()
+        int_flag = self.check_integrity(start_byte, end_byte, handle)
+        container.release()
+        if int_flag:
             print("Integrity is maintained, about to send data")
             file_name = handle+".dat"
             fp = open(file_name, 'rb')
@@ -130,7 +129,10 @@ class ListenClientMaster(Thread):
     
     
     def replicate_chunks(self, handle, chunk_type, ip, port):
-        if self.check_integrity(0, CHUNKSIZE-1, handle):
+        container.acquire()
+        int_flag = self.check_integrity(0, os.path.getsize(handle+".dat")-1, handle)
+        container.release()
+        if int_flag:
             if chunk_type == "":
                 for chunk in chunks_state:
                     if chunk["handle"] == handle:
@@ -156,6 +158,7 @@ class ListenClientMaster(Thread):
                         chunks_details = json.load(f)
                 except IOError:
                     resp = "Unable to retrieve chunks details!"
+                    print(resp)
                 container.release()
                 remove_entries = []
                 for i in range(len(chunks_details)):
@@ -306,7 +309,10 @@ class ListenClientMaster(Thread):
                         inf_port = json_data["data"]["infected_slave_port"]
                         inf_chunk_handle = json_data["data"]["infected_chunk_handle"]
                         chunk_name = inf_chunk_handle+".dat"
-                        if self.check_integrity(0, CHUNKSIZE-1, json_data["data"]["infected_chunk_handle"]):
+                        container.acquire()
+                        inte_flag = self.check_integrity(0, CHUNKSIZE-1, json_data["data"]["infected_chunk_handle"])
+                        container.release()
+                        if inte_flag:
                             print("Integrity is maintained, about to send data to the slave")
                             fp = open(chunk_name, "rb")
                             read_buff = fp.read(CHUNKSIZE)

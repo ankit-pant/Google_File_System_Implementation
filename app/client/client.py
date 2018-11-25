@@ -86,6 +86,7 @@ class ListenMasterChunkServer(Thread):
                 print("data from slave")
                     
         except ValueError:
+            indices_arr[:]=[]
             print("Data recieved from the chunk server")
             #print(data)
 
@@ -145,6 +146,10 @@ class TakeUserInput(object):
                     print(indices_arr)
             elif command == "snapshot":
                 request_data["action"] = "snapshot"
+                request_data["data"] = []
+            elif command == "delete":
+                fileName = input("Enter the filename: ")
+                request_data["action"] = "delete_file"
                 request_data["data"] = []
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((self.Master_Ip, self.Master_Port))

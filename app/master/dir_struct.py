@@ -106,13 +106,18 @@ class Tree:
         server_list.append(p_replica)
         server_list.append(s_replica1)
         server_list.append(s_replica2)
+        chunk_servers[0]["disk_free_space"] -= CHUNKSIZE
+        chunk_servers[1]["disk_free_space"] -= CHUNKSIZE
+        chunk_servers[2]["disk_free_space"] -= CHUNKSIZE
+        k=open('chunk_servers.json', 'w')
+        chunk_servers_updated = json.dumps(chunk_servers)
+        k.write(chunk_servers_updated)
         return server_list
     
     def fillMetaData(self, file_name, file_hash, metaObj):
         file_obj = {}
         file_obj["fileHashName"] = file_hash
         file_obj["chunkDetails"] = []
-        
         file = open(file_name, "rb")
         try:
             bytes_read = file.read(CHUNKSIZE)

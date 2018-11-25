@@ -24,9 +24,8 @@ config.read('master.properties')
 Json_rcv_limit = int(config.get('Master_Data','JSON_RCV_LIMIT'))
 
 class BgPoolChunkServer(object):
-    def __init__(self, metaData, chunk_servers, self_ip_port, interval=5):
+    def __init__(self, metaData, self_ip_port, interval=5):
         self.interval = interval
-        self.chunk_servers = chunk_servers
         self.ip = self_ip_port[0]
         self.port = int(self_ip_port[1])
         self.metadata = metaData
@@ -41,7 +40,7 @@ class BgPoolChunkServer(object):
             send_data["ip"]=self.ip
             send_data["port"]=self.port
             send_data["action"]="periodic_report"
-            for c_server in self.chunk_servers:
+            for c_server in dir_struct.globalChunkMapping.slaves_state:
                 TCP_IP=c_server["ip"]
                 TCP_PORT=c_server["port"]
                 try:    
@@ -95,7 +94,7 @@ except IOError:
     pickle.dump(metaData, master_state)
     master_state.close()
 
-bgthread = BgPoolChunkServer(metaData, servers_ip_port, self_ip_port)
+bgthread = BgPoolChunkServer(metaData, self_ip_port)
 
 tcpsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 tcpsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
