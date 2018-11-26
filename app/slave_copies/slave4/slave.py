@@ -146,7 +146,11 @@ class ListenClientMaster(Thread):
                             c_type = "pri"
                         else:
                             c_type = "sec"
-                        chunk_data = (DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER).encode()+read_buff
+                        for new_chunk in chunks_state:
+                            if new_chunk["handle"] == handle:
+                                valid_data_len = new_chunk["valid_data_len"]
+                                break
+                        chunk_data = (DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER+valid_data_len+DELIMITER).encode()+read_buff
                         #create data 
                         s.sendall(chunk_data)
                         s.close()
@@ -197,7 +201,11 @@ class ListenClientMaster(Thread):
                     c_type = "pri"
                 else:
                     c_type = "sec"
-                chunk_data = (DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER).encode()+read_buff
+                for new_chunk in chunks_state:
+                    if new_chunk["handle"] == handle:
+                        valid_data_len = new_chunk["valid_data_len"]
+                        break
+                chunk_data = (DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER+valid_data_len+DELIMITER).encode()+read_buff
                 #create data 
                 s.sendall(chunk_data)
                 s.close()
@@ -319,7 +327,7 @@ class ListenClientMaster(Thread):
                             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                             print("Connecting to: "+ip+str(port))
                             s.connect((inf_ip, inf_port))
-                            chunk_data = (DELIMITER+"resto"+DELIMITER+inf_chunk_handle+DELIMITER+"NuN"+DELIMITER).encode()+read_buff
+                            chunk_data = (DELIMITER+"resto"+DELIMITER+inf_chunk_handle+DELIMITER+"NuN"+DELIMITER+"00000000"+DELIMITER).encode()+read_buff
                             #create data 
                             s.sendall(chunk_data)
                             s.close()
@@ -364,8 +372,8 @@ class ListenClientMaster(Thread):
         except ValueError:
             #also have to recieve data from other slave servers
             print("size of the data is: "+str(len(data)))
-            flags = data[0:100]
-            data = data[100:]
+            flags = data[0:121]
+            data = data[121:]
             print("size of the data after stripping is: "+str(len(data)))
             flags = flags.decode()
             headers = flags.split(DELIMITER)
@@ -382,6 +390,7 @@ class ListenClientMaster(Thread):
             action = headers[0]
             chunk_type = headers[2]
             chunk_name = headers[1]+".dat"
+            valid_data_len = headers[3]
             chunk_file = open(chunk_name, "wb")
             chunk_file.write(data)
             chunk_file.close()
@@ -396,6 +405,7 @@ class ListenClientMaster(Thread):
                     fresh_chunk["type"] = "primary"
                 elif chunk_type == "sec":
                     fresh_chunk["type"] = "secondary"
+                fresh_chunk["valid_data_len"] = valid_data_len
                 chunks_details.append(fresh_chunk)
                 container.acquire()
                 k=open('chunkServerState.json', 'w')
@@ -414,6 +424,7 @@ class ListenClientMaster(Thread):
                 c_state["handle"] = headers[1]
                 c_state["isValid"] = True
                 c_state["type"] = fresh_chunk["type"]
+                c_state["valid_data_len"] = valid_data_len
                 chunks_state.append(c_state)
             elif action=="resto":
                 print("Data retrieved by another slave")
@@ -457,6 +468,7 @@ try:
         c_state["handle"] = chunk["chunk_handle"]
         c_state["type"] = chunk["type"]
         c_state["isValid"] = True
+        c_state["valid_data_len"] = chunk["valid_data_len"]
         chunks_state.append(c_state)
 except IOError:
     print("Unable to load chunks details")

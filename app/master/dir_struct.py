@@ -145,7 +145,14 @@ class Tree:
                         print("Socket created, connecting to"+chunk_server["ip"]+":"+str(chunk_server["port"]))
                         s.connect((chunk_server["ip"], chunk_server["port"]))
                         print("Connected, preparing data.")
-                        chunk_data = (DELIMITER+"store"+DELIMITER+chunk_hash+DELIMITER+chunk_server["type"]+DELIMITER).encode()+bytes_read
+                        data_len = str(len(bytes_read))
+                        while len(data_len)<8:
+                            data_len = "0"+data_len
+                        x=CHUNKSIZE-len(bytes_read)
+                        new_str = "0"*x
+                        padded_bytes = bytes_read+new_str.encode()
+                        print("Data length is: ", data_len)
+                        chunk_data = (DELIMITER+"store"+DELIMITER+chunk_hash+DELIMITER+chunk_server["type"]+DELIMITER+data_len+DELIMITER).encode()+padded_bytes
                         print("sending data to: "+chunk_server["ip"]+":"+str(chunk_server["port"]))
                         print("Size of the sending data is: "+str(len(chunk_data)))
                         f = s.sendall(chunk_data)
