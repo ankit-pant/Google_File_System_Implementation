@@ -150,7 +150,10 @@ class ListenClientMaster(Thread):
                             if new_chunk["handle"] == handle:
                                 valid_data_len = new_chunk["valid_data_len"]
                                 break
-                        chunk_data = (DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER+valid_data_len+DELIMITER).encode()+read_buff
+                        headers = DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER+valid_data_len+DELIMITER
+                        if len(headers)<200:
+                            headers = headers.ljust(200)
+                        chunk_data = headers.encode()+read_buff
                         #create data 
                         s.sendall(chunk_data)
                         s.close()
@@ -205,7 +208,10 @@ class ListenClientMaster(Thread):
                     if new_chunk["handle"] == handle:
                         valid_data_len = new_chunk["valid_data_len"]
                         break
-                chunk_data = (DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER+valid_data_len+DELIMITER).encode()+read_buff
+                headers = DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER+valid_data_len+DELIMITER
+                if len(headers)<200:
+                    headers = headers.ljust(200)
+                chunk_data = headers.encode()+read_buff
                 #create data 
                 s.sendall(chunk_data)
                 s.close()
@@ -329,7 +335,10 @@ class ListenClientMaster(Thread):
                             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                             print("Connecting to: "+ip+str(port))
                             s.connect((inf_ip, inf_port))
-                            chunk_data = (DELIMITER+"resto"+DELIMITER+inf_chunk_handle+DELIMITER+"NuN"+DELIMITER+"00000000"+DELIMITER).encode()+read_buff
+                            headers = DELIMITER+"resto"+DELIMITER+inf_chunk_handle+DELIMITER+"NuN"+DELIMITER+"00000000"+DELIMITER
+                            if len(headers)<200:
+                                headers = headers.ljust(200)
+                            chunk_data = headers.encode()+read_buff
                             #create data 
                             s.sendall(chunk_data)
                             s.close()
@@ -373,8 +382,9 @@ class ListenClientMaster(Thread):
         except ValueError:
             #also have to recieve data from other slave servers
             print("size of the data is: "+str(len(data)))
-            flags = data[0:121]
-            data = data[121:]
+            flags = data[0:200]
+            flags=flags.strip()
+            data = data[200:]
             print("size of the data after stripping is: "+str(len(data)))
             flags = flags.decode()
             headers = flags.split(DELIMITER)

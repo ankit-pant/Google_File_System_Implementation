@@ -178,6 +178,17 @@ class ListenClientChunkServer(Thread):
                                 dir_struct.globalChunkMapping.slaves_state[i]["chunks"] = fresh_chunks
                                 found = True
                                 break
+                        
+                        for i in range(len(chunk_servers)):
+                            if chunk_servers[i]["ip"] == j["ip"] and chunk_servers[i]["port"] == j["port"]:
+                                chunk_servers[i]["disk_free_space"] = j["extras"]
+                                break
+                        self.container.acquire()
+                        f = open('chunk_servers.json','w')
+                        jsonString = json.dumps(chunk_servers)
+                        f.write(jsonString)
+                        f.close()
+                        self.container.release()
                         #self.container.release()
                         if found == False:
                             new_entry = {}
@@ -200,10 +211,13 @@ class ListenClientChunkServer(Thread):
                         else:
                             new_res["response_status"]="OK"
                             new_res["data"]=[]
-                        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                        s.connect((j["ip"], j["port"]))
-                        s.sendall(str(new_res).encode())
-                        s.close()
+                        try:
+                            s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                            s.connect((j["ip"], j["port"]))
+                            s.sendall(str(new_res).encode())
+                            s.close()
+                        except:
+                            print("Slave is down")
                 elif j["action"] == "manipulated_chunk_found":
                     for wrong_chunk in j["data"]:
                         right_ips = []
@@ -270,7 +284,7 @@ class ListenClientChunkServer(Thread):
                                     print("slaves not updated")
                                     break
                             #container.release()
-                        reReplicateChunk.distribute_load(self.ip, self.port, j["ip"], j["port"], j["data"]["disk_free_space"], "new_added")
+                        reReplicateChunk.distribute_load(self.ip, self.port, j["ip"], j["port"], self.metaData, self.container, j["data"]["disk_free_space"], "new_added")
         except UnicodeDecodeError:
             print("Unexpected error:", sys.exc_info()[0])
             print("size of the data is: "+str(len(data)))

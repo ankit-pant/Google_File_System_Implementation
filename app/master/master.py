@@ -18,18 +18,36 @@ import sys
 import reReplicateChunk
 import configparser
 from ListenClientSlave import ListenClientChunkServer
+import copy
 
 container = BoundedSemaphore()
 config = configparser.RawConfigParser()
 config.read('master.properties')
 Json_rcv_limit = int(config.get('Master_Data','JSON_RCV_LIMIT'))
 
+class BgSaveOperationLog(object):
+    def __init__(self, metaData, interval=10):
+        self.metaData = metaData
+        self.interval = interval
+        thread = Thread(target=self.run, args=())
+        thread.daemon=True
+        thread.start()
+    
+    def run(self):
+        while True:
+            print("Dumping: ",self.metaData.slaves_list)
+            master_state = open('masterState','wb')
+            pickle.dump(self.metaData, master_state)
+            master_state.close()
+            time.sleep(self.interval)
+
 class BgPoolChunkServer(object):
-    def __init__(self, metaData, self_ip_port, interval=5):
+    def __init__(self, metaData, container, self_ip_port, interval=5):
         self.interval = interval
         self.ip = self_ip_port[0]
         self.port = int(self_ip_port[1])
         self.metadata = metaData
+        self.container = container
         thread = Thread(target=self.run, args=())
         thread.daemon = True
         thread.start()
@@ -50,36 +68,40 @@ class BgPoolChunkServer(object):
                     s.sendall(str(send_data).encode())
                     s.close()
                 except:
-                    reReplicateChunk.distribute_load(self.ip, self.port, TCP_IP, TCP_PORT, task="old_removed")
+                    reReplicateChunk.distribute_load(self.ip, self.port, TCP_IP, TCP_PORT, self.metadata, self.container, task="old_removed")
                     continue
             time.sleep(self.interval)
 
-                    
-try:
-    with open('chunk_servers.json') as f:
-        chunk_servers = json.load(f)
-except IOError:
-    print("Unable to locate chunkservers in the database!")
-
-servers_ip_port = []
-for server in chunk_servers:
-    j={}
-    j["ip"]=server["ip"]
-    j["port"]=server["port"]
-    servers_ip_port.append(j)
-
 self_ip_port = str(sys.argv[1]).split(":")
 print(self_ip_port)
-
-
-dir_struct.globalChunkMapping = ChunkLoc()
-dir_struct.globalChunkMapping.slaves_state = chunk_servers
+servers_ip_port = []
+    
 try:
     pklFile = open('masterState','rb')
     metaData = pickle.load(pklFile)
+    dir_struct.globalChunkMapping = ChunkLoc()
+    dir_struct.globalChunkMapping.slaves_state = copy.deepcopy(metaData.slaves_list)
+    for server in metaData.slaves_list:
+        j={}
+        j["ip"]=server["ip"]
+        j["port"]=server["port"]
+        servers_ip_port.append(j)
 except IOError:
+    try:
+        with open('chunk_servers.json') as f:
+            chunk_servers = json.load(f)
+    except IOError:
+        print("Unable to locate chunkservers in the database!")
+    for server in chunk_servers:
+        j={}
+        j["ip"]=server["ip"]
+        j["port"]=server["port"]
+        servers_ip_port.append(j)
+    dir_struct.globalChunkMapping = ChunkLoc()
+    dir_struct.globalChunkMapping.slaves_state = chunk_servers
     new_tree = Tree()
     metaData = DumpObj()
+    metaData.slaves_list = chunk_servers
     
     dir_arr = ["home", "home/a", "home/b", "home/a/d", "home/c", "home/a/e", 
                "home/b/g", "home/b/h", "home/b/i", "home/c/j", "home/c/k", "home/c/l", "home/a/d/m", "home/a/d/n", "home/a/d/n/EOT.mkv"]
@@ -95,7 +117,9 @@ except IOError:
     pickle.dump(metaData, master_state)
     master_state.close()
 
-bgthread = BgPoolChunkServer(metaData, self_ip_port)
+bgthread = BgPoolChunkServer(metaData, container, self_ip_port)
+
+bgthreadoplog = BgSaveOperationLog(metaData)
 
 tcpsock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
 tcpsock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)

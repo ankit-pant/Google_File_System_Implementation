@@ -5,7 +5,7 @@ import configparser
 import socket
 from socket import error as socket_error
 from threading import BoundedSemaphore
-
+import copy
 globalChunkMapping = None
 
 config = configparser.RawConfigParser()
@@ -74,6 +74,7 @@ class DumpObj:
         self.fileNamespace=None
         self.metadata=[]
         self.chunksDB=[]
+        self.slaves_list=[]
 
 # used to create namespace
 class Tree:
@@ -84,7 +85,7 @@ class Tree:
         self.isFile = False
         self.fileHash = ""
     
-    def allocateServers(self, container):
+    def allocateServers(self, container, metaObj):
         container.acquire()
         try:
             with open('chunk_servers.json') as f:
@@ -117,7 +118,9 @@ class Tree:
         chunk_servers_updated = json.dumps(chunk_servers)
         k.write(chunk_servers_updated)
         container.release()
-        return server_list
+        metaObj.slaves_list[:]=[]
+        metaObj.slaves_list = copy.deepcopy(chunk_servers)
+        return server_list, metaObj
     
     def fillMetaData(self, file_name, file_hash, metaObj, container):
         file_obj = {}
@@ -142,7 +145,7 @@ class Tree:
                 j = {}
                 j["chunk_handle"]=chunk_hash
                 metaObj.chunksDB.append(chunk_hash)
-                j["servers"]=self.allocateServers(container)
+                j["servers"], metaObj=self.allocateServers(container,metaObj)
                 globalChunkMapping.chunks_mapping.append(j)
                 
                 DELIMITER = config.get('Master_Data', 'DELIMITER')
@@ -159,7 +162,10 @@ class Tree:
                         new_str = "0"*x
                         padded_bytes = bytes_read+new_str.encode()
                         print("Data length is: ", data_len)
-                        chunk_data = (DELIMITER+"store"+DELIMITER+chunk_hash+DELIMITER+chunk_server["type"]+DELIMITER+data_len+DELIMITER).encode()+padded_bytes
+                        headers = DELIMITER+"store"+DELIMITER+chunk_hash+DELIMITER+chunk_server["type"]+DELIMITER+data_len+DELIMITER
+                        if len(headers)<200:
+                            headers = headers.ljust(200)
+                        chunk_data = headers.encode()+padded_bytes
                         print("sending data to: "+chunk_server["ip"]+":"+str(chunk_server["port"]))
                         print("Size of the sending data is: "+str(len(chunk_data)))
                         f = s.sendall(chunk_data)

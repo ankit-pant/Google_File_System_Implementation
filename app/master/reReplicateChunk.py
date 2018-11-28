@@ -39,7 +39,7 @@ def find_nearest(ips, self_ip):
     return '.'.join(ips[i])
 
 
-def distribute_load(self_ip, self_port, target_ip, target_port, disk_free_space=0, task="new_added"):
+def distribute_load(self_ip, self_port, target_ip, target_port, metaData, container, disk_free_space=0, task="new_added"):
     if task == "new_added":
         print("Free disk space is: ",disk_free_space)
         max_slave_capacity = disk_free_space/CHUNKSIZE
@@ -129,11 +129,13 @@ def distribute_load(self_ip, self_port, target_ip, target_port, disk_free_space=
         new_slave_entry["disk_free_space"] = disk_free_space
         new_slave_entry["chunks"] = new_server_chunks
         dir_struct.globalChunkMapping.slaves_state.append(new_slave_entry)
+        container.acquire()
         try:
             with open('chunk_servers.json') as f:
                 old_chunk_servers = json.load(f)
         except IOError:
             print("Unable to locate chunkservers in the database!")
+        container.release()
         new_slave = {}
         new_slave["ip"] = target_ip
         new_slave["port"] = target_port
@@ -141,10 +143,14 @@ def distribute_load(self_ip, self_port, target_ip, target_port, disk_free_space=
         new_slave["disk_free_space"] = disk_free_space
         old_chunk_servers.append(new_slave)
         
+        container.acquire()
         f = open('chunk_servers.json', 'w')
         jsonString = json.dumps(old_chunk_servers)
         f.write(jsonString)
         f.close()
+        container.release()
+        metaData.slaves_list[:]=[]
+        metaData.slaves_list = copy.deepcopy(old_chunk_servers)
         
     elif task == "old_removed":
         print("A slave with ip: ", target_ip, " and port: ",target_port, "is down")
@@ -211,23 +217,28 @@ def distribute_load(self_ip, self_port, target_ip, target_port, disk_free_space=
                         updated_entry["data"].append(chunk_details)
                         updated_obj.append(updated_entry)
                     break      
-            
+        
+        container.acquire()
         try:
             with open('chunk_servers.json') as f:
                 old_chunk_servers = json.load(f)
         except IOError:
             print("Unable to locate chunkservers in the database!")
+        container.release()
         
         for i in range(len(old_chunk_servers)):
             if old_chunk_servers[i]["ip"] == target_ip and old_chunk_servers[i]["port"] == target_port:
                 del old_chunk_servers[i]
                 break
         
+        container.acquire()
         f = open('chunk_servers.json','w')
         jsonString = json.dumps(old_chunk_servers)
         f.write(jsonString)
         f.close()
-        
+        container.release()
+        metaData.slaves_list[:]=[]
+        metaData.slaves_list = copy.deepcopy(old_chunk_servers)
         for u_server in updated_obj:
             balance_data = {}
             balance_data["ip"] = self_ip
