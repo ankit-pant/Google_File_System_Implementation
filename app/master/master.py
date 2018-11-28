@@ -10,7 +10,7 @@ from dir_struct import Tree
 from dir_struct import DumpObj
 from dir_struct import ChunkLoc
 import json
-from threading import Thread
+from threading import Thread, BoundedSemaphore
 import pickle
 import time
 import socket
@@ -19,6 +19,7 @@ import reReplicateChunk
 import configparser
 from ListenClientSlave import ListenClientChunkServer
 
+container = BoundedSemaphore()
 config = configparser.RawConfigParser()
 config.read('master.properties')
 Json_rcv_limit = int(config.get('Master_Data','JSON_RCV_LIMIT'))
@@ -49,7 +50,7 @@ class BgPoolChunkServer(object):
                     s.sendall(str(send_data).encode())
                     s.close()
                 except:
-                    reReplicateChunk.distribute_load(self.ip, self.port, TCP_IP, TCP_PORT, self.metadata, task="old_removed")
+                    reReplicateChunk.distribute_load(self.ip, self.port, TCP_IP, TCP_PORT, task="old_removed")
                     continue
             time.sleep(self.interval)
 
@@ -85,7 +86,7 @@ except IOError:
     
     type_dir = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]
     for i in range(len(dir_arr)):
-        incoming = new_tree.insert(dir_arr[i], type_dir[i], new_tree, metaData)
+        incoming = new_tree.insert(dir_arr[i], type_dir[i], new_tree, metaData, container)
         metaData = incoming[1]
     
     metaData.fileNamespace = new_tree
@@ -104,6 +105,6 @@ tcpsock.bind((self_ip_port[0], int(self_ip_port[1])))
 while True:
     tcpsock.listen(1000)
     (conn, (ip,port)) = tcpsock.accept()
-    listenthread = ListenClientChunkServer(metaData, conn, self_ip_port[0], int(self_ip_port[1]))
+    listenthread = ListenClientChunkServer(metaData, conn, self_ip_port[0], int(self_ip_port[1]), container)
     listenthread.daemon = True
     listenthread.start()

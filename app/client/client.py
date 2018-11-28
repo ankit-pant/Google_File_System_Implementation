@@ -11,6 +11,7 @@ config = configparser.RawConfigParser()
 config.read('client.properties')
 REC_LIMIT = int(config.get('Client_Data','CHUNK_RECSIZE'))
 CHUNKSIZE = int(config.get('Client_Data','CHUNKSIZE'))
+DELIMITER = config.get('Client_Data','DELIMITER')
 
 
 class ListenMasterChunkServer(Thread):
@@ -82,6 +83,11 @@ class ListenMasterChunkServer(Thread):
                         s.connect((sending_ip, sending_port))
                         s.sendall(str(request_data).encode())
                         s.close()
+                elif json_data["action"]=="delete/response":
+                    if json_data["data"]["ok_status"]:
+                        print("File Successfully Deleted")
+                    else:
+                        print("Unable to delete the file")
             elif json_data["agent"] == "slave":
                 print("data from slave")
                     
@@ -146,14 +152,49 @@ class TakeUserInput(object):
                     print(indices_arr)
             elif command == "snapshot":
                 request_data["action"] = "snapshot"
-                request_data["data"] = []
+                request_data["data"] = {}
             elif command == "delete":
-                fileName = input("Enter the filename: ")
+                fileName = input("Enter the filepath to be deleted: ")
                 request_data["action"] = "delete_file"
-                request_data["data"] = []
+                request_data["data"] = {}
+                request_data["data"]["file_path"] = fileName
+            elif command == "create":
+                fileName = input("Enter the filename: ")
+                request_data["action"] = "create_file"
+                x = input("For reading data from an existing file print 1 else for feeding data print 2:")
+                if x==str("1"):
+                    fileName_arr = fileName.split('/')
+                    null_idx = []
+                    i=0
+                    for dir in fileName_arr:
+                        if dir=='':
+                            null_idx.append(i)
+                        i+=1
+                    k=len(null_idx)-1
+                    while k>=0:
+                        del fileName_arr[null_idx[k]]
+                        k-=1
+                    fname = fileName_arr[len(fileName_arr)-1]
+                    print("Reading data from file: ",fname)
+                    file = open(fname, "rb")
+                    bytes_read = file.read()
+                    headers = DELIMITER+"distribute"+DELIMITER+self.self_Ip+DELIMITER+str(self.self_Port)+DELIMITER+fileName+DELIMITER
+                    if len(headers)<118:
+                        headers = headers.ljust(118)
+                    request_data = headers.encode()+bytes_read
+                elif x==str("2"):
+                    data = input("Enter the data for the file")
+                    data=data.encode()
+                    headers = DELIMITER+"distribute"+DELIMITER+self.self_Ip+DELIMITER+str(self.self_Port)+DELIMITER+fileName+DELIMITER
+                    if len(headers)<118:
+                        headers = headers.ljust(118)
+                    request_data = headers.encode()+data
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((self.Master_Ip, self.Master_Port))
-            s.sendall(str(request_data).encode())
+            if type(request_data) is bytes:
+                s.sendall(request_data)
+            else:                
+                s.sendall(str(request_data).encode())
             s.close()
 
 self_ip_port = str(sys.argv[1]).split(':')

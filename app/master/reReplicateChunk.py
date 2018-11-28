@@ -39,7 +39,7 @@ def find_nearest(ips, self_ip):
     return '.'.join(ips[i])
 
 
-def distribute_load(self_ip, self_port, target_ip, target_port, metadata, disk_free_space=0, task="new_added"):
+def distribute_load(self_ip, self_port, target_ip, target_port, disk_free_space=0, task="new_added"):
     if task == "new_added":
         print("Free disk space is: ",disk_free_space)
         max_slave_capacity = disk_free_space/CHUNKSIZE

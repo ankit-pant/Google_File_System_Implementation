@@ -4,6 +4,7 @@ import json
 import configparser
 import socket
 from socket import error as socket_error
+from threading import BoundedSemaphore
 
 globalChunkMapping = None
 
@@ -83,12 +84,14 @@ class Tree:
         self.isFile = False
         self.fileHash = ""
     
-    def allocateServers(self):
+    def allocateServers(self, container):
+        container.acquire()
         try:
             with open('chunk_servers.json') as f:
                 chunk_servers = json.load(f)
         except IOError:
             print("Unable to locate chunkservers in the database!")
+        container.release()
         chunk_servers.sort(key=lambda x: x["disk_free_space"], reverse=True)
         server_list = []
         p_replica = {}
@@ -109,12 +112,14 @@ class Tree:
         chunk_servers[0]["disk_free_space"] -= CHUNKSIZE
         chunk_servers[1]["disk_free_space"] -= CHUNKSIZE
         chunk_servers[2]["disk_free_space"] -= CHUNKSIZE
+        container.acquire()
         k=open('chunk_servers.json', 'w')
         chunk_servers_updated = json.dumps(chunk_servers)
         k.write(chunk_servers_updated)
+        container.release()
         return server_list
     
-    def fillMetaData(self, file_name, file_hash, metaObj):
+    def fillMetaData(self, file_name, file_hash, metaObj, container):
         file_obj = {}
         file_obj["fileHashName"] = file_hash
         file_obj["chunkDetails"] = []
@@ -123,10 +128,12 @@ class Tree:
             bytes_read = file.read(CHUNKSIZE)
             c_num=0
             while bytes_read:
-                fname=str(c_num)+".dat"
-                f=open(fname, "wb")
-                f.write(bytes_read)
-                f.close()
+#==============================================================================
+#                 fname=str(c_num)+".dat"
+#                 f=open(fname, "wb")
+#                 f.write(bytes_read)
+#                 f.close()
+#==============================================================================
                 result = hashlib.sha1(bytes_read)
                 chunk_hash = result.hexdigest()
                 chunk = {}
@@ -135,7 +142,7 @@ class Tree:
                 j = {}
                 j["chunk_handle"]=chunk_hash
                 metaObj.chunksDB.append(chunk_hash)
-                j["servers"]=self.allocateServers()
+                j["servers"]=self.allocateServers(container)
                 globalChunkMapping.chunks_mapping.append(j)
                 
                 DELIMITER = config.get('Master_Data', 'DELIMITER')
@@ -169,7 +176,7 @@ class Tree:
         return metaObj
         
     
-    def traverseInsert(self, dir_path, tree_root, isFile, metaObj):
+    def traverseInsert(self, dir_path, tree_root, isFile, metaObj, container):
         dir_found = False
         if dir_path[0] == tree_root.name and tree_root.isFile==False:
             del dir_path[0]
@@ -179,9 +186,9 @@ class Tree:
                     dir_found = True
                     break
             if dir_found:
-                return self.traverseInsert(dir_path, tree_root, isFile, metaObj)
+                return self.traverseInsert(dir_path, tree_root, isFile, metaObj, container)
             elif dir_found==False and dir_path:
-                new_obj = Tree(dir_path[0])
+                new_obj = Tree(x=dir_path[0])
                 new_obj.isFile = isFile
                 if isFile:
                     with open(dir_path[0], 'rb') as f:
@@ -189,14 +196,14 @@ class Tree:
                     result = hashlib.sha1(file_content)
                     file_hash = result.hexdigest()
                     new_obj.fileHash = file_hash
-                    incoming = self.fillMetaData(dir_path[0], file_hash, metaObj)
+                    incoming = self.fillMetaData(dir_path[0], file_hash, metaObj, container)
                 tree_root.children_name.append(dir_path[0])
                 tree_root.children_ptr.append(new_obj)
                 return True, metaObj
         else:
             return False, incoming
     
-    def insert(self, name, isFile, tree_root, metaObj):
+    def insert(self, name, isFile, tree_root, metaObj, container):
         parent_directories = name.split('/')
         null_idx = []
         i=0
@@ -213,7 +220,7 @@ class Tree:
             tree_root.isFile = isFile
             return True, metaObj
         else:
-            insert_loc = self.traverseInsert(parent_directories, tree_root, isFile, metaObj)
+            insert_loc = self.traverseInsert(parent_directories, tree_root, isFile, metaObj, container)
             return insert_loc
         
     def showDirectoryStructure(self, tree_root):
@@ -250,3 +257,31 @@ class Tree:
             k-=1
         return self.traverseTree(self, fileName_arr)
     
+    def traverseRemove(self, tree_root, fileName_arr):
+        if tree_root.name == fileName_arr[0]:
+            del fileName_arr[0]
+            for i in range(len(tree_root.children_name)):
+                if tree_root.children_name[i] == fileName_arr[0] and len(fileName_arr)==1 and tree_root.children_ptr[i].isFile:
+                    removed_obj = tree_root.children_ptr[i]
+                    del tree_root.children_ptr[i]
+                    del tree_root.children_name[i]
+                    del removed_obj
+                    break
+                elif tree_root.children_name[i] == fileName_arr[0] and len(fileName_arr)>1:
+                    tree_root = tree_root.children_ptr[i]
+                    self.traverseRemove(tree_root, fileName_arr)
+                    break
+            
+    def removeEntry(self, file_name):
+        fileName_arr = file_name.split('/')
+        null_idx = []
+        i=0
+        for dir in fileName_arr:
+            if dir=='':
+                null_idx.append(i)
+            i+=1
+        k=len(null_idx)-1
+        while k>=0:
+            del fileName_arr[null_idx[k]]
+            k-=1
+        self.traverseRemove(self, fileName_arr)

@@ -270,8 +270,11 @@ class ListenClientMaster(Thread):
                         self.send_json_data(self.master_ip, self.master_port, create_response)
                     elif json_data["action"]=="report/response":
                         #   Garbage Collection (removing entry from chunkServerState.json and deleting file)
+                        print(json_data["data"])
                         if json_data["response_status"]=="orphaned_chunks":
                             orp_chunks_list = json_data["data"]
+                            remove_entries = []
+                            todel_checksums = []
                             for orp_chunks in orp_chunks_list:
                                 os.remove(orp_chunks+".dat")
                                 container.acquire()
@@ -281,12 +284,10 @@ class ListenClientMaster(Thread):
                                 except IOError:
                                     resp = "Unable to retrieve chunks details!"
                                 container.release()
-                                remove_entries = []
                                 for i in range(len(chunks_details)):
                                     if chunks_details[i]["chunk_handle"] == orp_chunks:
                                         remove_entries.append(i)
                                         break
-                                todel_checksums = []
                                 # DELETING ENTRY FROM CHECKSUMS
                                 container.acquire()
                                 for k in range(len(CHECKSUM_OBJ)):
@@ -306,6 +307,7 @@ class ListenClientMaster(Thread):
                             k.close()
                             container.release()
                             OK_REPORT=True
+                            print("new json string is: ",jsonString)
                             print("Removed orphaned chunk")
                         elif json_data["response_status"] == "OK":
                             OK_REPORT=True
@@ -357,7 +359,8 @@ class ListenClientMaster(Thread):
                             t.start()
                         for t in threads:
                             t.join()
-            
+                    elif json_data["action"] == "delete_chunks":
+                        print(json_data)
             elif json_data["agent"]=="client":
                 if json_data["action"] == "request/read":
                     while not OK_REPORT:
