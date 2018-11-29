@@ -75,6 +75,13 @@ class DumpObj:
         self.metadata=[]
         self.chunksDB=[]
         self.slaves_list=[]
+        self.snapshotRecord = []
+
+class SnapObj:
+    def __init__(self):
+        self.nameSpace = None
+        self.metadata=[]
+        self.chunksDB=[]
 
 # used to create namespace
 class Tree:
@@ -144,8 +151,8 @@ class Tree:
                 chunk["chunk_index"] = c_num
                 j = {}
                 j["chunk_handle"]=chunk_hash
-                metaObj.chunksDB.append(chunk_hash)
                 j["servers"], metaObj=self.allocateServers(container,metaObj)
+                metaObj.chunksDB.append(chunk_hash)
                 globalChunkMapping.chunks_mapping.append(j)
                 
                 DELIMITER = config.get('Master_Data', 'DELIMITER')
@@ -248,7 +255,17 @@ class Tree:
                     return self.traverseTree(tree_root, fileName_arr)
         return None
         
-        
+    def retrieveNode(self, tree_root, dir_arr):
+        if tree_root.name == dir_arr[0]:
+            del dir_arr[0]
+            for i in range(len(tree_root.children_name)):
+                if tree_root.children_name[i] == dir_arr[0] and len(dir_arr)==1:
+                    return tree_root.children_ptr[i]
+                elif tree_root.children_name[i] == dir_arr[0] and len(dir_arr)>1:
+                    tree_root = tree_root.children_ptr[i]
+                    return self.traverseTree(tree_root, dir_arr)
+        return None
+    
     def retrieveHandle(self, file_name):
         fileName_arr = file_name.split('/')
         null_idx = []
@@ -263,11 +280,37 @@ class Tree:
             k-=1
         return self.traverseTree(self, fileName_arr)
     
+    def retrieveAllFileHandles(self, tree_root, file_handles):
+        if tree_root==None:
+            return False
+        if tree_root.isFile:
+            file_handles.append(tree_root.fileHash)
+        for i in tree_root.children_ptr:
+            tree_root=i
+            self.retrieveAllFileHandles(tree_root, file_handles)
+    
+#==============================================================================
+#     def traverseRemove(self, tree_root, fileName_arr):
+#         if tree_root.name == fileName_arr[0]:
+#             del fileName_arr[0]
+#             for i in range(len(tree_root.children_name)):
+#                 if tree_root.children_name[i] == fileName_arr[0] and len(fileName_arr)==1 and tree_root.children_ptr[i].isFile:
+#                     removed_obj = tree_root.children_ptr[i]
+#                     del tree_root.children_ptr[i]
+#                     del tree_root.children_name[i]
+#                     del removed_obj
+#                     break
+#                 elif tree_root.children_name[i] == fileName_arr[0] and len(fileName_arr)>1:
+#                     tree_root = tree_root.children_ptr[i]
+#                     self.traverseRemove(tree_root, fileName_arr)
+#                     break
+#==============================================================================
+            
     def traverseRemove(self, tree_root, fileName_arr):
         if tree_root.name == fileName_arr[0]:
             del fileName_arr[0]
             for i in range(len(tree_root.children_name)):
-                if tree_root.children_name[i] == fileName_arr[0] and len(fileName_arr)==1 and tree_root.children_ptr[i].isFile:
+                if tree_root.children_name[i] == fileName_arr[0] and len(fileName_arr)==1:
                     removed_obj = tree_root.children_ptr[i]
                     del tree_root.children_ptr[i]
                     del tree_root.children_name[i]
@@ -277,7 +320,8 @@ class Tree:
                     tree_root = tree_root.children_ptr[i]
                     self.traverseRemove(tree_root, fileName_arr)
                     break
-            
+    
+    
     def removeEntry(self, file_name):
         fileName_arr = file_name.split('/')
         null_idx = []

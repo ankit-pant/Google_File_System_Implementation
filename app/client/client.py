@@ -151,8 +151,15 @@ class TakeUserInput(object):
                     print("On taking input frm user: ")
                     print(indices_arr)
             elif command == "snapshot":
+                dirName = input("Enter the target directory: ")
                 request_data["action"] = "snapshot"
                 request_data["data"] = {}
+                request_data["data"]["dir_path"] = dirName
+            elif command == "restore_snapshot":
+                dirName = input("Enter the directory name: ")
+                request_data["action"] = "restore_snapshot"
+                request_data["data"] = {}
+                request_data["data"]["dir_path"] = dirName
             elif command == "delete":
                 fileName = input("Enter the filepath to be deleted: ")
                 request_data["action"] = "delete_file"

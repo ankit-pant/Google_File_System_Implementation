@@ -6,6 +6,7 @@ from time import sleep
 import json
 import configparser
 import hashlib
+import shutil
 
 OK_REPORT = False
 CHECKSUM_OBJ = []
@@ -150,7 +151,10 @@ class ListenClientMaster(Thread):
                             if new_chunk["handle"] == handle:
                                 valid_data_len = new_chunk["valid_data_len"]
                                 break
-                        chunk_data = (DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER+valid_data_len+DELIMITER).encode()+read_buff
+                        headers = DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER+valid_data_len+DELIMITER
+                        if len(headers)<200:
+                            headers = headers.ljust(200)
+                        chunk_data = headers.encode()+read_buff
                         #create data 
                         s.sendall(chunk_data)
                         s.close()
@@ -205,7 +209,10 @@ class ListenClientMaster(Thread):
                     if new_chunk["handle"] == handle:
                         valid_data_len = new_chunk["valid_data_len"]
                         break
-                chunk_data = (DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER+valid_data_len+DELIMITER).encode()+read_buff
+                headers = DELIMITER+"store"+DELIMITER+handle+DELIMITER+c_type+DELIMITER+valid_data_len+DELIMITER
+                if len(headers)<200:
+                    headers = headers.ljust(200)
+                chunk_data = headers.encode()+read_buff
                 #create data 
                 s.sendall(chunk_data)
                 s.close()
@@ -329,7 +336,10 @@ class ListenClientMaster(Thread):
                             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                             print("Connecting to: "+ip+str(port))
                             s.connect((inf_ip, inf_port))
-                            chunk_data = (DELIMITER+"resto"+DELIMITER+inf_chunk_handle+DELIMITER+"NuN"+DELIMITER+"00000000"+DELIMITER).encode()+read_buff
+                            headers = DELIMITER+"resto"+DELIMITER+inf_chunk_handle+DELIMITER+"NuN"+DELIMITER+"00000000"+DELIMITER
+                            if len(headers)<200:
+                                headers = headers.ljust(200)
+                            chunk_data = headers.encode()+read_buff
                             #create data 
                             s.sendall(chunk_data)
                             s.close()
@@ -359,8 +369,77 @@ class ListenClientMaster(Thread):
                             t.start()
                         for t in threads:
                             t.join()
-                    elif json_data["action"] == "delete_chunks":
-                        print(json_data)
+                    elif json_data["action"] == "copy/snapshot":
+                        src = os.getcwd()
+                        subdir = "snapshot"
+                        timestamp = json_data["data"]["timestamp"]
+                        dest = os.path.join(src, subdir, timestamp)
+                        print(chunks_state)
+                        try:
+                            os.mkdir(os.path.join(src, subdir))
+                        except FileExistsError:
+                            print("Snapshot folder already exist")
+                        
+                        try:
+                            os.mkdir(os.path.join(src, subdir, timestamp))
+                        except FileExistsError:
+                            print(timestamp, "folder alredy exist")
+                            
+                        for handle in json_data["data"]["chunks_list"]:
+                            for new_chunk in chunks_state:
+                                if new_chunk["handle"] == handle:
+                                    valid_data_len = new_chunk["valid_data_len"]
+                                    break
+                            full_file_name = os.path.join(src, handle+".dat")
+                            if int(valid_data_len) == 64*1024*1024:
+                                if (os.path.isfile(full_file_name)):
+                                    print("Copying",full_file_name, dest)
+                                    shutil.copy(full_file_name, dest)
+                            else:
+                                new_chunk_copy = os.path.join(dest, handle+".dat")
+                                k = open(handle+".dat","rb")
+                                chunk_data = k.read(int(valid_data_len))
+                                k.close()
+                                k = open(new_chunk_copy,"wb")
+                                k.write(chunk_data)
+                                k.close()
+                    elif json_data["action"] == "send_snap_chunks":
+                        chunk_name = json_data["data"]["handle"]
+                        snap_ip = json_data["data"]["ip"]
+                        snap_port = json_data["data"]["port"]
+                        print("Sending chunk to slave with: ",snap_ip,snap_port)
+                        for new_chunk in chunks_state:
+                            if new_chunk["handle"] == json_data["data"]["handle"]:
+                                valid_data_len = new_chunk["valid_data_len"]
+                                break
+                        k = open(chunk_name+".dat","rb")
+                        read_buff = k.read(int(valid_data_len))
+                        k.close()
+                        headers = DELIMITER+"snapc"+DELIMITER+json_data["data"]["handle"]+DELIMITER+json_data["data"]["timestamp"]+DELIMITER
+                        if len(headers)<200:
+                            headers = headers.ljust(200)
+                        chunk_data = headers.encode()+read_buff
+                        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        s.connect((snap_ip, snap_port))
+                        s.sendall(chunk_data)
+                        s.close()
+                    elif json_data["action"] == "restore_snapshot":
+                        print("requesting to retrieve snapshot data")
+                        folderName = json_data["data"]["folder"]
+                        here = os.getcwd()
+                        target = os.path.join(here, "snapshot", folderName)
+                        meta_file = open(os.path.join(target, "metaInfo"), "rb")
+                        meta_data = meta_file.read()
+                        meta_file.close()
+                        headers = DELIMITER+"meta_file"+DELIMITER+json_data["data"]["directory"]+DELIMITER
+                        if len(headers)<118:
+                            headers = headers.ljust(118)
+                        meta_data = headers.encode()+meta_data
+                        self.sock.close()
+                        s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+                        s.connect((json_data["ip"], json_data["port"]))
+                        s.sendall(meta_data)
+                        s.close()
             elif json_data["agent"]=="client":
                 if json_data["action"] == "request/read":
                     while not OK_REPORT:
@@ -375,8 +454,9 @@ class ListenClientMaster(Thread):
         except ValueError:
             #also have to recieve data from other slave servers
             print("size of the data is: "+str(len(data)))
-            flags = data[0:121]
-            data = data[121:]
+            flags = data[0:200]
+            flags=flags.strip()
+            data = data[200:]
             print("size of the data after stripping is: "+str(len(data)))
             flags = flags.decode()
             headers = flags.split(DELIMITER)
@@ -391,13 +471,14 @@ class ListenClientMaster(Thread):
                 del headers[null_idx[k]]
                 k-=1
             action = headers[0]
-            chunk_type = headers[2]
-            chunk_name = headers[1]+".dat"
-            valid_data_len = headers[3]
-            chunk_file = open(chunk_name, "wb")
-            chunk_file.write(data)
-            chunk_file.close()
+            
             if action == "store":
+                chunk_type = headers[2]
+                chunk_name = headers[1]+".dat"
+                valid_data_len = headers[3]
+                chunk_file = open(chunk_name, "wb")
+                chunk_file.write(data)
+                chunk_file.close()
                 container.acquire()
                 with open('chunkServerState.json') as f:
                     chunks_details = json.load(f)
@@ -430,6 +511,12 @@ class ListenClientMaster(Thread):
                 c_state["valid_data_len"] = valid_data_len
                 chunks_state.append(c_state)
             elif action=="resto":
+                chunk_type = headers[2]
+                chunk_name = headers[1]+".dat"
+                valid_data_len = headers[3]
+                chunk_file = open(chunk_name, "wb")
+                chunk_file.write(data)
+                chunk_file.close()
                 print("Data retrieved by another slave")
                 for c in range(len(chunks_state)):
                     if chunks_state[c]["handle"] == headers[1]:
@@ -444,8 +531,53 @@ class ListenClientMaster(Thread):
                 notify_master["data"]={}
                 notify_master["handle"] = headers[1]
                 self.send_json_data(self.master_ip, self.master_port, notify_master)
-            
-
+            elif action=="snaps":
+                here = os.getcwd()
+                timestamp = headers[2]
+                subdir = "snapshot"
+                filename = headers[1]
+                filepath = os.path.join(here, subdir, timestamp, filename)
+                
+                try:
+                    os.mkdir(os.path.join(here, subdir))
+                except FileExistsError:
+                    print("Snapshot folder already exist")
+                
+                try:
+                    os.mkdir(os.path.join(here, subdir, timestamp))
+                except FileExistsError:
+                    print(timestamp, "folder alredy exist")
+                    
+                try:
+                    f = open(filepath, 'wb')
+                    f.write(data)
+                    f.close()
+                except IOError:
+                    print("Wrong path provided")
+            elif action=="snapc":
+                print("Chunk recieved for snapshot from another slave")
+                here = os.getcwd()
+                subdir = "snapshot"
+                filename = headers[1]+".dat"
+                timestamp = headers[2]
+                filepath = os.path.join(here, subdir, timestamp, filename)
+                
+                try:
+                    os.mkdir(os.path.join(here, subdir))
+                except FileExistsError:
+                    print("Snapshot folder already exist")
+                
+                try:
+                    os.mkdir(os.path.join(here, subdir, timestamp))
+                except FileExistsError:
+                    print(timestamp,"folder already exist")
+                
+                try:
+                    f = open(filepath, 'wb')
+                    f.write(data)
+                    f.close()
+                except IOError:
+                    print("Wrong path provided")
 def generate_checkSum(file_name):
     file = open(file_name, "rb")
     check_sum = []

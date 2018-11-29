@@ -36,6 +36,8 @@ class BgSaveOperationLog(object):
     def run(self):
         while True:
             print("Dumping: ",self.metaData.slaves_list)
+            print("Chunks DB len: ",len(self.metaData.chunksDB))
+            print("number of files: ",len(self.metaData.metadata))
             master_state = open('masterState','wb')
             pickle.dump(self.metaData, master_state)
             master_state.close()

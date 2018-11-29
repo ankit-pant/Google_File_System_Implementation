@@ -8,6 +8,7 @@ import copy
 import reReplicateChunk
 import pickle
 import sys
+import snapshot
 
 config = configparser.RawConfigParser()
 config.read('master.properties')
@@ -106,7 +107,25 @@ class ListenClientChunkServer(Thread):
                     s.sendall(str(response_data).encode())
                     s.close()
                 elif j["action"]=="snapshot":
-                    print("Client trying to snapshot")
+                    self.sock.close()
+                    snapshot.takeSnap(self.metaData, j["data"]["dir_path"], self.ip, self.port)
+                elif j["action"]=="restore_snapshot":
+                    dirName = j["data"]["dir_path"]
+                    for snaps in self.metaData.snapshotRecord:
+                        if snaps["path"] == dirName:
+                            folderName = snaps["time"]
+                            host_ip = snaps["slave_details"]["ip"]
+                            host_port = snaps["slave_details"]["port"]
+                            break
+                    retrieve_snap = {}
+                    retrieve_snap["agent"] = "master"
+                    retrieve_snap["action"] = "restore_snapshot"
+                    retrieve_snap["ip"] = self.ip
+                    retrieve_snap["port"] = self.port
+                    retrieve_snap["data"] = {}
+                    retrieve_snap["data"]["folder"] = folderName
+                    retrieve_snap["data"]["directory"] = dirName
+                    self.send_json_data(host_ip, host_port, retrieve_snap)
                 elif j["action"] == "delete_file":
                     file_name = j["data"]["file_path"]
                     self.sock.close()
@@ -129,6 +148,9 @@ class ListenClientChunkServer(Thread):
                 if j["action"]=="report_ack":
                     valid_slave = False
                     self.container.acquire()
+                    k = open('chunk_servers.json','r')
+                    x=k.read()
+                    print("On reading the data is: ",x)
                     try:
                         with open('chunk_servers.json') as f:
                             chunk_servers = json.load(f)
@@ -306,30 +328,35 @@ class ListenClientChunkServer(Thread):
                 del headers[null_idx[k]]
                 k-=1
             action = headers[0]
-            client_ip = headers[1]
-            client_port = headers[2]
-            file_name = headers[3]
-            
-            fileName_arr = file_name.split('/')
-            null_idx = []
-            i=0
-            for dir in fileName_arr:
-                if dir=='':
-                    null_idx.append(i)
-                i+=1
-            k=len(null_idx)-1
-            while k>=0:
-                del fileName_arr[null_idx[k]]
-                k-=1
-            
-            fname = fileName_arr[len(fileName_arr)-1]
-            k=open(fname,"wb")
-            k.write(data)
-            k.close()
-            tree_copy = copy.deepcopy(self.metaData.fileNamespace)
-            metadata_copy = copy.deepcopy(self.metaData)
-            incoming = tree_copy.insert(file_name, 1, tree_copy, metadata_copy, self.container)
-            self.metaData = incoming[1]
-            self.metaData.fileNamespace = tree_copy
-            self.metaData.fileNamespace.showDirectoryStructure(self.metaData.fileNamespace)
+            if action == "distribute":
+                client_ip = headers[1]
+                client_port = headers[2]
+                file_name = headers[3]
+                
+                fileName_arr = file_name.split('/')
+                null_idx = []
+                i=0
+                for dir in fileName_arr:
+                    if dir=='':
+                        null_idx.append(i)
+                    i+=1
+                k=len(null_idx)-1
+                while k>=0:
+                    del fileName_arr[null_idx[k]]
+                    k-=1
+                
+                fname = fileName_arr[len(fileName_arr)-1]
+                k=open(fname,"wb")
+                k.write(data)
+                k.close()
+                incoming = self.metaData.fileNamespace.insert(file_name, 1, self.metaData.fileNamespace, self.metaData, self.container)
+                self.metaData = incoming[1]
+                self.metaData.fileNamespace.showDirectoryStructure(self.metaData.fileNamespace)
+            elif action == "meta_file":
+#==============================================================================
+#                 snapped_dir = headers[1]
+#                 snapped = pickle.loads(data)
+#==============================================================================
+                print("recieved metafile from slave")
+                
             
