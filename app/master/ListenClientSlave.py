@@ -310,8 +310,8 @@ class ListenClientChunkServer(Thread):
         except UnicodeDecodeError:
             print("Unexpected error:", sys.exc_info()[0])
             print("size of the data is: "+str(len(data)))
-            flags = data[0:118]
-            data = data[118:]
+            flags = data[0:250]
+            data = data[250:]
             print("size of the data after stripping is: "+str(len(data)))
             print(flags)
             flags = flags.decode()
@@ -353,10 +353,29 @@ class ListenClientChunkServer(Thread):
                 self.metaData = incoming[1]
                 self.metaData.fileNamespace.showDirectoryStructure(self.metaData.fileNamespace)
             elif action == "meta_file":
-#==============================================================================
-#                 snapped_dir = headers[1]
-#                 snapped = pickle.loads(data)
-#==============================================================================
-                print("recieved metafile from slave")
+                snapped_dir = headers[1]
+                snapped = pickle.loads(data)
+                fileName_arr = snapped_dir.split('/')
+                null_idx = []
+                i=0
+                for dir in fileName_arr:
+                    if dir=='':
+                        null_idx.append(i)
+                    i+=1
+                k=len(null_idx)-1
+                while k>=0:
+                    del fileName_arr[null_idx[k]]
+                    k-=1
+                copy_farr = copy.deepcopy(fileName_arr)
                 
-            
+                if self.metaData.fileNamespace.snapRemove(self.metaData.fileNamespace, copy_farr):
+                    print("Successfully removed ",snapped_dir," from the directory tree")
+                else:
+                    print("Error in removing ",snapped_dir," from directory tree")
+                
+                if self.metaData.fileNamespace.mergeTrees(fileName_arr, self.metaData.fileNamespace, snapped.nameSpace):
+                    print("Successfully stored ",snapped_dir," in the directory tree")
+                else:
+                    print("Error in storing ",snapped_dir," in the directory tree")
+                    
+                

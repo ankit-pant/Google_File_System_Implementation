@@ -6,8 +6,9 @@ import socket
 from socket import error as socket_error
 from threading import BoundedSemaphore
 import copy
-globalChunkMapping = None
+import os
 
+globalChunkMapping = None
 config = configparser.RawConfigParser()
 config.read('master.properties')
 CHUNKSIZE = int(config.get('Master_Data','CHUNKSIZE'))
@@ -185,6 +186,7 @@ class Tree:
                 bytes_read = file.read(CHUNKSIZE)
         finally:
             file.close()
+            os.remove(file_name)
         metaObj.metadata.append(file_obj)
         return metaObj
         
@@ -289,28 +291,11 @@ class Tree:
             tree_root=i
             self.retrieveAllFileHandles(tree_root, file_handles)
     
-#==============================================================================
-#     def traverseRemove(self, tree_root, fileName_arr):
-#         if tree_root.name == fileName_arr[0]:
-#             del fileName_arr[0]
-#             for i in range(len(tree_root.children_name)):
-#                 if tree_root.children_name[i] == fileName_arr[0] and len(fileName_arr)==1 and tree_root.children_ptr[i].isFile:
-#                     removed_obj = tree_root.children_ptr[i]
-#                     del tree_root.children_ptr[i]
-#                     del tree_root.children_name[i]
-#                     del removed_obj
-#                     break
-#                 elif tree_root.children_name[i] == fileName_arr[0] and len(fileName_arr)>1:
-#                     tree_root = tree_root.children_ptr[i]
-#                     self.traverseRemove(tree_root, fileName_arr)
-#                     break
-#==============================================================================
-            
     def traverseRemove(self, tree_root, fileName_arr):
         if tree_root.name == fileName_arr[0]:
             del fileName_arr[0]
             for i in range(len(tree_root.children_name)):
-                if tree_root.children_name[i] == fileName_arr[0] and len(fileName_arr)==1:
+                if tree_root.children_name[i] == fileName_arr[0] and len(fileName_arr)==1 and tree_root.children_ptr[i].isFile:
                     removed_obj = tree_root.children_ptr[i]
                     del tree_root.children_ptr[i]
                     del tree_root.children_name[i]
@@ -321,6 +306,40 @@ class Tree:
                     self.traverseRemove(tree_root, fileName_arr)
                     break
     
+    def snapRemove(self, tree_root, fileName_arr):
+        if tree_root.name == fileName_arr[0]:
+            del fileName_arr[0]
+            for i in range(len(tree_root.children_name)):
+                if tree_root.children_name[i] == fileName_arr[0] and len(fileName_arr)==1:
+                    removed_obj = tree_root.children_ptr[i]
+                    del tree_root.children_ptr[i]
+                    del tree_root.children_name[i]
+                    del removed_obj
+                    return True
+                elif tree_root.children_name[i] == fileName_arr[0] and len(fileName_arr)>1:
+                    tree_root = tree_root.children_ptr[i]
+                    return self.snapRemove(tree_root, fileName_arr)
+        else:
+            return False
+                    
+    def mergeTrees(self, dir_path, tree_root, new_tree_root):
+        dir_found = False
+        if dir_path[0] == tree_root.name and tree_root.isFile==False:
+            del dir_path[0]
+            for ptr_loc in range(len(tree_root.children_name)):
+                if dir_path[0] == tree_root.children_name[ptr_loc]:
+                    tree_root = tree_root.children_ptr[ptr_loc]
+                    dir_found = True
+                    break
+            if dir_found:
+                return self.mergeTrees(dir_path, tree_root, new_tree_root)
+            elif dir_found==False and dir_path:
+                tree_root.children_name.append(dir_path[0])
+                tree_root.children_ptr.append(new_tree_root)
+                return True
+        else:
+            return False
+        
     
     def removeEntry(self, file_name):
         fileName_arr = file_name.split('/')

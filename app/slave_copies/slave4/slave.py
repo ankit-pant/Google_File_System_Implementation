@@ -432,8 +432,8 @@ class ListenClientMaster(Thread):
                         meta_data = meta_file.read()
                         meta_file.close()
                         headers = DELIMITER+"meta_file"+DELIMITER+json_data["data"]["directory"]+DELIMITER
-                        if len(headers)<118:
-                            headers = headers.ljust(118)
+                        if len(headers)<250:
+                            headers = headers.ljust(250)
                         meta_data = headers.encode()+meta_data
                         self.sock.close()
                         s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)

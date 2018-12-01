@@ -106,9 +106,9 @@ except IOError:
     metaData.slaves_list = chunk_servers
     
     dir_arr = ["home", "home/a", "home/b", "home/a/d", "home/c", "home/a/e", 
-               "home/b/g", "home/b/h", "home/b/i", "home/c/j", "home/c/k", "home/c/l", "home/a/d/m", "home/a/d/n", "home/a/d/n/EOT.mkv"]
+               "home/b/g", "home/b/h", "home/b/i", "home/c/j", "home/c/k", "home/c/l", "home/a/d/m", "home/a/d/n"]
     
-    type_dir = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,1]
+    type_dir = [0,0,0,0,0,0,0,0,0,0,0,0,0,0]
     for i in range(len(dir_arr)):
         incoming = new_tree.insert(dir_arr[i], type_dir[i], new_tree, metaData, container)
         metaData = incoming[1]

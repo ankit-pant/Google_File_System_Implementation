@@ -1,10 +1,10 @@
 import socket
-from threading import Thread
+from threading import Thread, BoundedSemaphore
 import sys
 import configparser
 import json
 import copy
-
+container = BoundedSemaphore()
 
 indices_arr = []
 config = configparser.RawConfigParser()
@@ -44,7 +44,16 @@ class ListenMasterChunkServer(Thread):
            
     def run(self):
         global indices_arr
-        data = self.sock.recv(REC_LIMIT)
+        RCVCHUNKSIZE = 64*1024*1024
+        total_len = RCVCHUNKSIZE
+        data = []
+        while total_len:
+            data_rcv = self.sock.recv(RCVCHUNKSIZE)
+            if not data_rcv:
+                break
+            data.append(data_rcv)
+            total_len = total_len-len(data_rcv)
+        data = b''.join(data)
         try:
             str_data = data.decode().replace("\'", "\"")
             print(str_data)
@@ -93,6 +102,11 @@ class ListenMasterChunkServer(Thread):
                     
         except ValueError:
             indices_arr[:]=[]
+            container.acquire()
+            k=open("recieved_file.dat","wb")
+            k.write(data)
+            k.close()
+            container.release()
             print("Data recieved from the chunk server")
             #print(data)
 
@@ -186,15 +200,15 @@ class TakeUserInput(object):
                     file = open(fname, "rb")
                     bytes_read = file.read()
                     headers = DELIMITER+"distribute"+DELIMITER+self.self_Ip+DELIMITER+str(self.self_Port)+DELIMITER+fileName+DELIMITER
-                    if len(headers)<118:
-                        headers = headers.ljust(118)
+                    if len(headers)<250:
+                        headers = headers.ljust(250)
                     request_data = headers.encode()+bytes_read
                 elif x==str("2"):
                     data = input("Enter the data for the file")
                     data=data.encode()
                     headers = DELIMITER+"distribute"+DELIMITER+self.self_Ip+DELIMITER+str(self.self_Port)+DELIMITER+fileName+DELIMITER
-                    if len(headers)<118:
-                        headers = headers.ljust(118)
+                    if len(headers)<250:
+                        headers = headers.ljust(250)
                     request_data = headers.encode()+data
             s = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             s.connect((self.Master_Ip, self.Master_Port))
